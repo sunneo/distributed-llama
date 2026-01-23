@@ -50,6 +50,8 @@ def quantize_f32_to_q80(x: np.ndarray, block_size: int = 32) -> Tuple[np.ndarray
         abs_max = np.max(np.abs(block))
         
         # Avoid division by zero
+        # Note: We use 127.0 (not 128) to avoid saturation at the edge of int8 range.
+        # This provides symmetric quantization: [-127, 127] maps to [-abs_max, abs_max]
         if abs_max == 0:
             scale = 0.0
         else:

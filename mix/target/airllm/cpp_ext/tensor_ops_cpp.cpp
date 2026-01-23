@@ -1,19 +1,19 @@
-"""
-C++ Extension Module for Distributed-Llama Python Worker
-
-This module provides Python bindings to optimized C++ implementations
-of critical tensor operations:
-- Matrix multiplication (using BLAS)
-- RMS normalization (with SIMD)
-- Activation functions (SiLU, GELU)
-
-Build instructions:
-    pip install pybind11
-    c++ -O3 -Wall -shared -std=c++11 -fPIC \
-        $(python3 -m pybind11 --includes) \
-        -o tensor_ops_cpp$(python3-config --extension-suffix) \
-        tensor_ops_cpp.cpp
-"""
+/*
+ * C++ Extension Module for Distributed-Llama Python Worker
+ *
+ * This module provides Python bindings to optimized C++ implementations
+ * of critical tensor operations:
+ * - Matrix multiplication (using BLAS)
+ * - RMS normalization (with SIMD)
+ * - Activation functions (SiLU, GELU)
+ *
+ * Build instructions:
+ *     pip install pybind11
+ *     c++ -O3 -Wall -shared -std=c++11 -fPIC \
+ *         $(python3 -m pybind11 --includes) \
+ *         -o tensor_ops_cpp$(python3-config --extension-suffix) \
+ *         tensor_ops_cpp.cpp
+ */
 
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
@@ -150,9 +150,9 @@ py::array_t<float> silu_cpp(py::array_t<float> x) {
         __m256 exp_neg_x = _mm256_max_ps(neg_x, _mm256_set1_ps(-88.0f));
         exp_neg_x = _mm256_min_ps(exp_neg_x, _mm256_set1_ps(88.0f));
         
-        // Use built-in approximation
-        // For simplicity, fall back to scalar for now
-        for (size_t j = i; j < i + 8; j++) {
+        // For simplicity, fall back to scalar for exp computation
+        // A full SIMD exp would require polynomial approximation here
+        for (size_t j = i; j < std::min(i + 8, size); j++) {
             out_ptr[j] = x_ptr[j] / (1.0f + std::exp(-x_ptr[j]));
         }
     }

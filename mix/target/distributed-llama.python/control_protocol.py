@@ -255,6 +255,11 @@ def calculate_overhead_savings(n_layers: int, n_offsets: int) -> dict:
     """
     Calculate overhead savings from using binary protocol.
     
+    Estimated JSON overhead per entry:
+    - Layer ID: ~20 bytes (e.g., '"layer_id": 123,\n')
+    - Offset pair: ~50 bytes (e.g., '"offset": 123456, "size": 789,\n')
+    - JSON structure: ~100 bytes (brackets, commas, quotes)
+    
     Args:
         n_layers: Number of layers
         n_offsets: Number of offset entries
@@ -262,9 +267,9 @@ def calculate_overhead_savings(n_layers: int, n_offsets: int) -> dict:
     Returns:
         Dictionary with overhead comparison
     """
-    # Text/JSON protocol (approximate)
-    json_layer_overhead = n_layers * 20  # e.g., "layer_id": 123,
-    json_offset_overhead = n_offsets * 50  # e.g., "offset": 123456, "size": 789,
+    # Text/JSON protocol (estimated based on typical JSON serialization)
+    json_layer_overhead = n_layers * 20  # Estimated: "layer_id": 123,
+    json_offset_overhead = n_offsets * 50  # Estimated: "offset": 123456, "size": 789,
     json_total = json_layer_overhead + json_offset_overhead + 100  # JSON structure overhead
     
     # Binary protocol
