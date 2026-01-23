@@ -8,9 +8,9 @@ import socket
 import struct
 from typing import Optional, Tuple
 
-# Protocol constants (matching C++ implementation)
-ACK = 23571114
-MAX_CHUNK_SIZE = 4096
+# Protocol constants matching C++ implementation (src/nn/nn-network.cpp)
+ACK = 23571114  # Acknowledgment packet value
+MAX_CHUNK_SIZE = 4096  # Maximum bytes per socket I/O operation
 
 
 class NetworkException(Exception):

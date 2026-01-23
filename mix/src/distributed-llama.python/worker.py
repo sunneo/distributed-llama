@@ -113,12 +113,13 @@ class Worker:
         print("TODO: Implement main execution loop")
         
         # Placeholder for main loop
+        import time
         try:
             while True:
                 # TODO: Wait for work from root node
                 # TODO: Execute operations
                 # TODO: Synchronize results
-                pass
+                time.sleep(0.1)  # Prevent busy-wait
         except KeyboardInterrupt:
             print("\nShutdown requested")
         except Exception as e:

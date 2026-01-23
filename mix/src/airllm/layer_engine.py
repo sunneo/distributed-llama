@@ -65,8 +65,13 @@ class MemoryMappedWeights:
         if self.mmap is None:
             raise RuntimeError("Memory map not opened")
         
+        # Validate size is compatible with dtype
+        itemsize = np.dtype(dtype).itemsize
+        if size % itemsize != 0:
+            raise ValueError(f"Size {size} is not evenly divisible by itemsize {itemsize}")
+        
         # Create view into memory map
-        n_elements = size // np.dtype(dtype).itemsize
+        n_elements = size // itemsize
         weights_flat = np.frombuffer(self.mmap[offset:offset + size], dtype=dtype, count=n_elements)
         
         # Reshape to desired shape

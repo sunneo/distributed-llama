@@ -9,6 +9,10 @@ from dataclasses import dataclass
 from typing import Dict, Tuple
 from .model_header import ModelHeader, FloatType
 
+# Constants for quantization formats
+Q40_BLOCK_SIZE = 32  # Block size for Q40 quantization (4-bit weights)
+HEADER_PREFIX_SIZE = 8  # Size of magic number (4 bytes) + header size (4 bytes)
+
 
 def get_float_size(float_type: FloatType) -> int:
     """Get size in bytes for a single element of the given float type."""
@@ -32,14 +36,11 @@ def calculate_q40_size(n_elements: int) -> int:
     Q40 format: 4 bits per weight + scale factor
     Typically stored in blocks of 32 or 64 elements.
     """
-    # Assuming block size of 32 (common for Q4)
-    block_size = 32
-    n_blocks = (n_elements + block_size - 1) // block_size
-    
     # Each block: 32 weights * 4 bits + 1 float32 scale = 16 bytes + 4 bytes = 20 bytes
     # But packed more efficiently in practice - using simplified calculation
     # Real implementation should match the C++ quantization format exactly
-    bytes_per_block = (block_size // 2) + 4  # 4 bits per weight + 4 byte scale
+    n_blocks = (n_elements + Q40_BLOCK_SIZE - 1) // Q40_BLOCK_SIZE
+    bytes_per_block = (Q40_BLOCK_SIZE // 2) + 4  # 4 bits per weight + 4 byte scale
     return n_blocks * bytes_per_block
 
 
@@ -114,8 +115,8 @@ class WeightOffsetCalculator:
     
     def _calculate_all_offsets(self) -> None:
         """Calculate offsets for all layers in the model."""
-        # Start after header
-        current_offset = self.header.header_size + 8  # magic (4) + header_size (4)
+        # Start after header (magic + header_size + header data)
+        current_offset = self.header.header_size + HEADER_PREFIX_SIZE
         
         # Token embedding: vocab_size x dim
         token_emb_size = self._get_tensor_size(self.header.vocab_size * self.header.dim)

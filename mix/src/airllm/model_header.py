@@ -29,7 +29,7 @@ class HeaderKey(IntEnum):
     WEIGHT_FLOAT_TYPE = 13
     ROPE_SCALING_FACTOR = 14
     ROPE_SCALING_LOW_FREQ_FACTOR = 15
-    ROPE_SCALING_HIGH_FREQ_FACTORY = 16
+    ROPE_SCALING_HIGH_FREQ_FACTOR = 16
     ROPE_SCALING_ORIG_MAX_SEQ_LEN = 17
     ROPE_TYPE = 18
     HEAD_DIM = 19
@@ -88,7 +88,7 @@ class ModelHeader:
     rope_theta: float
     rope_scaling_factor: float
     rope_scaling_low_freq_factor: float
-    rope_scaling_high_freq_factory: float
+    rope_scaling_high_freq_factor: float
     rope_scaling_orig_max_seq_len: int
     
     # MoE (if applicable)
@@ -163,7 +163,7 @@ def parse_model_header(model_path: str, max_seq_len: int = 0) -> ModelHeader:
             'rope_theta': 10000.0,
             'rope_scaling_factor': 1.0,
             'rope_scaling_low_freq_factor': 0.0,
-            'rope_scaling_high_freq_factory': 0.0,
+            'rope_scaling_high_freq_factor': 0.0,
             'rope_scaling_orig_max_seq_len': 0,
             'n_experts': 0,
             'n_active_experts': 0,
@@ -209,8 +209,8 @@ def parse_model_header(model_path: str, max_seq_len: int = 0) -> ModelHeader:
                 header_dict['rope_scaling_factor'] = float(value)
             elif key == HeaderKey.ROPE_SCALING_LOW_FREQ_FACTOR:
                 header_dict['rope_scaling_low_freq_factor'] = float(value)
-            elif key == HeaderKey.ROPE_SCALING_HIGH_FREQ_FACTORY:
-                header_dict['rope_scaling_high_freq_factory'] = float(value)
+            elif key == HeaderKey.ROPE_SCALING_HIGH_FREQ_FACTOR:
+                header_dict['rope_scaling_high_freq_factor'] = float(value)
             elif key == HeaderKey.ROPE_SCALING_ORIG_MAX_SEQ_LEN:
                 header_dict['rope_scaling_orig_max_seq_len'] = value
             elif key == HeaderKey.ROPE_TYPE:
@@ -272,5 +272,5 @@ def print_model_header(header: ModelHeader) -> None:
     if header.rope_type == RopeType.LLAMA3_1:
         print(f"💡 RopeScaling: f={header.rope_scaling_factor:.1f}, "
               f"l={header.rope_scaling_low_freq_factor:.1f}, "
-              f"h={header.rope_scaling_high_freq_factory:.1f}, "
+              f"h={header.rope_scaling_high_freq_factor:.1f}, "
               f"o={header.rope_scaling_orig_max_seq_len}")
