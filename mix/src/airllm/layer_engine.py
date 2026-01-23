@@ -10,60 +10,8 @@ Key concept: Only keep 1-2 layers in RAM at a time, load others from disk as nee
 import numpy as np
 from typing import Optional, List, Dict, Tuple
 from pathlib import Path
-
-
-class LayerOffsetCalculator:
-    """
-    Calculates byte offsets for individual layers in model files.
-    
-    This enables loading specific layers without reading the entire model.
-    """
-    
-    def __init__(self, model_path: str):
-        """
-        Initialize offset calculator.
-        
-        Args:
-            model_path: Path to model file
-        """
-        self.model_path = Path(model_path)
-        self.layer_offsets: Dict[int, Tuple[int, int]] = {}  # layer_id -> (offset, size)
-        
-    def calculate_offsets(self, n_layers: int, dim: int, hidden_dim: int) -> None:
-        """
-        Calculate byte offsets for each layer's weights.
-        
-        Args:
-            n_layers: Number of transformer layers
-            dim: Model dimension
-            hidden_dim: Hidden dimension (FFN)
-        
-        TODO: This is a simplified version. Real implementation needs to:
-        - Parse model header to get architecture details
-        - Calculate exact offsets for each weight tensor
-        - Handle different quantization formats (Q40, Q80, F32)
-        """
-        print(f"TODO: Calculate offsets for {n_layers} layers")
-        # Placeholder implementation
-        offset = 0
-        for layer_id in range(n_layers):
-            # Estimate layer size (this is a rough approximation)
-            # Real implementation should read from model header
-            layer_size = dim * dim * 4  # Very rough estimate
-            self.layer_offsets[layer_id] = (offset, layer_size)
-            offset += layer_size
-    
-    def get_layer_offset(self, layer_id: int) -> Tuple[int, int]:
-        """
-        Get offset and size for a specific layer.
-        
-        Args:
-            layer_id: Layer index
-            
-        Returns:
-            Tuple of (offset, size) in bytes
-        """
-        return self.layer_offsets.get(layer_id, (0, 0))
+from .model_header import ModelHeader, parse_model_header, print_model_header
+from .weight_offsets import WeightOffsetCalculator, LayerWeightOffsets
 
 
 class MemoryMappedWeights:
@@ -73,15 +21,18 @@ class MemoryMappedWeights:
     Uses numpy.memmap to access model weights without loading entire file.
     """
     
-    def __init__(self, model_path: str):
+    def __init__(self, model_path: str, header: ModelHeader):
         """
         Initialize memory-mapped weights.
         
         Args:
             model_path: Path to model file
+            header: Parsed model header
         """
         self.model_path = Path(model_path)
+        self.header = header
         self.mmap: Optional[np.memmap] = None
+        self.offset_calc = WeightOffsetCalculator(header)
         
     def open(self) -> None:
         """Open memory-mapped file."""
@@ -98,13 +49,14 @@ class MemoryMappedWeights:
             del self.mmap
             self.mmap = None
     
-    def load_layer_weights(self, offset: int, size: int, dtype=np.float32) -> np.ndarray:
+    def load_weight_tensor(self, offset: int, size: int, shape: Tuple[int, ...], dtype=np.float32) -> np.ndarray:
         """
-        Load specific layer weights from memory map.
+        Load specific weight tensor from memory map.
         
         Args:
             offset: Byte offset in file
             size: Size in bytes
+            shape: Desired tensor shape
             dtype: Data type of weights
             
         Returns:
@@ -115,7 +67,80 @@ class MemoryMappedWeights:
         
         # Create view into memory map
         n_elements = size // np.dtype(dtype).itemsize
-        weights = np.frombuffer(self.mmap[offset:offset + size], dtype=dtype, count=n_elements)
+        weights_flat = np.frombuffer(self.mmap[offset:offset + size], dtype=dtype, count=n_elements)
+        
+        # Reshape to desired shape
+        try:
+            weights = weights_flat.reshape(shape)
+        except ValueError:
+            # If reshape fails, return flat array
+            print(f"Warning: Could not reshape to {shape}, returning flat array")
+            weights = weights_flat
+        
+        return weights
+    
+    def load_layer_weights(self, layer_id: int) -> Dict[str, np.ndarray]:
+        """
+        Load all weight tensors for a specific layer.
+        
+        Args:
+            layer_id: Layer index
+            
+        Returns:
+            Dictionary mapping weight names to numpy arrays
+        """
+        layer_offsets = self.offset_calc.get_layer_offsets(layer_id)
+        weights = {}
+        
+        # TODO: Handle quantized formats (Q40, Q80)
+        # For now, assuming F32
+        dtype = np.float32
+        
+        # Load attention weights
+        wq_shape = (self.header.dim, self.header.q_dim)
+        weights['wq'] = self.load_weight_tensor(
+            layer_offsets.wq_offset, layer_offsets.wq_size, wq_shape, dtype
+        )
+        
+        wk_shape = (self.header.dim, self.header.kv_dim)
+        weights['wk'] = self.load_weight_tensor(
+            layer_offsets.wk_offset, layer_offsets.wk_size, wk_shape, dtype
+        )
+        
+        wv_shape = (self.header.dim, self.header.kv_dim)
+        weights['wv'] = self.load_weight_tensor(
+            layer_offsets.wv_offset, layer_offsets.wv_size, wv_shape, dtype
+        )
+        
+        wo_shape = (self.header.q_dim, self.header.dim)
+        weights['wo'] = self.load_weight_tensor(
+            layer_offsets.wo_offset, layer_offsets.wo_size, wo_shape, dtype
+        )
+        
+        # Load FFN weights
+        w1_shape = (self.header.dim, self.header.hidden_dim)
+        weights['w1'] = self.load_weight_tensor(
+            layer_offsets.w1_offset, layer_offsets.w1_size, w1_shape, dtype
+        )
+        
+        w2_shape = (self.header.hidden_dim, self.header.dim)
+        weights['w2'] = self.load_weight_tensor(
+            layer_offsets.w2_offset, layer_offsets.w2_size, w2_shape, dtype
+        )
+        
+        w3_shape = (self.header.dim, self.header.hidden_dim)
+        weights['w3'] = self.load_weight_tensor(
+            layer_offsets.w3_offset, layer_offsets.w3_size, w3_shape, dtype
+        )
+        
+        # Load normalization weights
+        norm_shape = (self.header.dim,)
+        weights['attn_norm'] = self.load_weight_tensor(
+            layer_offsets.attn_norm_offset, layer_offsets.attn_norm_size, norm_shape, dtype
+        )
+        weights['ffn_norm'] = self.load_weight_tensor(
+            layer_offsets.ffn_norm_offset, layer_offsets.ffn_norm_size, norm_shape, dtype
+        )
         
         return weights
 
@@ -136,24 +161,23 @@ class LayerWiseInferenceEngine:
             model_path: Path to model file
         """
         self.model_path = model_path
-        self.offset_calc = LayerOffsetCalculator(model_path)
-        self.weights_loader = MemoryMappedWeights(model_path)
+        self.header: Optional[ModelHeader] = None
+        self.weights_loader: Optional[MemoryMappedWeights] = None
         
         self.current_layer: Optional[int] = None
         self.current_weights: Optional[Dict[str, np.ndarray]] = None
     
-    def initialize(self, n_layers: int, dim: int, hidden_dim: int) -> None:
-        """
-        Initialize the engine.
+    def initialize(self) -> None:
+        """Initialize the engine by parsing model header."""
+        # Parse model header
+        self.header = parse_model_header(self.model_path)
+        print_model_header(self.header)
         
-        Args:
-            n_layers: Number of layers
-            dim: Model dimension
-            hidden_dim: Hidden dimension
-        """
-        self.offset_calc.calculate_offsets(n_layers, dim, hidden_dim)
+        # Initialize memory-mapped weight loader
+        self.weights_loader = MemoryMappedWeights(self.model_path, self.header)
         self.weights_loader.open()
-        print(f"Initialized layer-wise engine for {n_layers} layers")
+        
+        print(f"\nInitialized layer-wise engine for {self.header.n_layers} layers")
     
     def load_layer(self, layer_id: int) -> None:
         """
@@ -162,22 +186,18 @@ class LayerWiseInferenceEngine:
         Args:
             layer_id: Layer index to load
         """
-        if self.current_layer == layer_id:
+        if self.current_layer == layer_id and self.current_weights is not None:
             return  # Already loaded
         
-        offset, size = self.offset_calc.get_layer_offset(layer_id)
+        if self.weights_loader is None:
+            raise RuntimeError("Engine not initialized")
         
-        # Load weights (zero-copy via memmap)
-        weights_flat = self.weights_loader.load_layer_weights(offset, size)
-        
-        # TODO: Split into individual weight tensors (wq, wk, wv, wo, w1, w2, w3)
-        # This requires knowing the exact tensor shapes from model config
-        self.current_weights = {
-            'flat': weights_flat  # Placeholder
-        }
-        
+        # Load all weights for this layer
+        self.current_weights = self.weights_loader.load_layer_weights(layer_id)
         self.current_layer = layer_id
-        print(f"Loaded layer {layer_id} ({size} bytes)")
+        
+        total_size = sum(w.nbytes for w in self.current_weights.values())
+        print(f"Loaded layer {layer_id} ({total_size / 1024 / 1024:.2f} MB)")
     
     def execute_layer(self, layer_id: int, x: np.ndarray) -> np.ndarray:
         """
@@ -201,22 +221,25 @@ class LayerWiseInferenceEngine:
         print(f"TODO: Execute layer {layer_id}")
         return x  # Placeholder
     
-    def forward(self, x: np.ndarray, n_layers: int) -> np.ndarray:
+    def forward(self, x: np.ndarray) -> np.ndarray:
         """
         Run forward pass through all layers.
         
         Args:
             x: Input tokens/embeddings
-            n_layers: Number of layers to execute
             
         Returns:
             Output activations
         """
-        for layer_id in range(n_layers):
+        if self.header is None:
+            raise RuntimeError("Engine not initialized")
+        
+        for layer_id in range(self.header.n_layers):
             x = self.execute_layer(layer_id, x)
         
         return x
     
     def cleanup(self) -> None:
         """Clean up resources."""
-        self.weights_loader.close()
+        if self.weights_loader:
+            self.weights_loader.close()

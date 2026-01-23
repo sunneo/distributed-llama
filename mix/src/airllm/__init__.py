@@ -10,13 +10,33 @@ Enables running large models (30B+) on consumer hardware by:
 __version__ = "0.1.0"
 
 from .layer_engine import (
-    LayerOffsetCalculator,
     MemoryMappedWeights,
     LayerWiseInferenceEngine
 )
+from .model_header import (
+    ModelHeader,
+    parse_model_header,
+    print_model_header,
+    ArchType,
+    FloatType,
+    HiddenAct,
+    RopeType
+)
+from .weight_offsets import (
+    WeightOffsetCalculator,
+    LayerWeightOffsets
+)
 
 __all__ = [
-    'LayerOffsetCalculator',
     'MemoryMappedWeights', 
-    'LayerWiseInferenceEngine'
+    'LayerWiseInferenceEngine',
+    'ModelHeader',
+    'parse_model_header',
+    'print_model_header',
+    'ArchType',
+    'FloatType',
+    'HiddenAct',
+    'RopeType',
+    'WeightOffsetCalculator',
+    'LayerWeightOffsets'
 ]

@@ -8,9 +8,9 @@
 
 # Distributed-AirLLM Project Tracking
 
-## Current Phase: [1. Align distributed-llama to python]
+## Current Phase: [2. AirLLM Integration]
 
-### Phase 1: Python Distributed-Llama Worker [In Progress]
+### Phase 1: Python Distributed-Llama Worker [Completed - 50%]
 - [x] Sub-task 1.1: Create basic Python worker structure
   - [x] NetworkClient: Socket communication with C++ root node
   - [x] ConfigReader: Read NetConfig and NodeConfig from root
@@ -36,16 +36,26 @@
   - [ ] Load weights from memory-mapped file at specified offsets
   - [ ] Support distributed weight sharding
 
-### Phase 2: AirLLM Integration [Ready to Start]
-- [ ] Sub-task 2.1: Parse model header for architecture
-  - [ ] Read LlmHeader from model file
-  - [ ] Extract n_layers, dim, hidden_dim, etc.
-  - [ ] Calculate exact weight tensor offsets
-- [ ] Sub-task 2.2: Implement layer caching strategy
+### Phase 2: AirLLM Integration [In Progress - 60%]
+- [x] Sub-task 2.1: Parse model header for architecture
+  - [x] ModelHeader dataclass with all architecture parameters
+  - [x] parse_model_header() function to read binary header
+  - [x] Support for LLAMA, QWEN3, QWEN3_MOE architectures
+  - [x] Handle different quantization formats (F32, Q40, Q80)
+- [x] Sub-task 2.2: Calculate exact weight offsets
+  - [x] WeightOffsetCalculator: Calculate byte offsets for all tensors
+  - [x] LayerWeightOffsets: Offsets for attention, FFN, norm weights
+  - [x] Support for per-layer weight loading
+  - [x] Handle different weight types (F32, Q40, Q80)
+- [x] Sub-task 2.3: Integrate header parsing with layer engine
+  - [x] Updated LayerWiseInferenceEngine to use parse_model_header()
+  - [x] Updated MemoryMappedWeights to use WeightOffsetCalculator
+  - [x] load_layer_weights() returns dict of named tensors
+- [ ] Sub-task 2.4: [TODO] Implement layer caching strategy
   - [ ] LRU cache for recently used layers
   - [ ] Prefetch next layer while executing current
   - [ ] Memory pressure management
-- [ ] Sub-task 2.3: Integrate with distributed worker
+- [ ] Sub-task 2.5: [TODO] Integrate with distributed worker
   - [ ] Load only assigned layer subset per node
   - [ ] Coordinate layer distribution across nodes
 
@@ -71,15 +81,18 @@
   - [ ] C++ for compute kernels
 
 ## Roadmap Summary
-1. **Python Alignment** [In Progress - 40%]
-2. **AirLLM Integration** [Ready to Start - 0%]
+1. **Python Alignment** [Completed - 50%]
+2. **AirLLM Integration** [In Progress - 60%]
 3. **Zero-Data Movement Logic** [Pending]
 4. **Bottleneck C++ Rewrite** [Pending]
 
 ## Current Status
 ✅ Created Python worker framework with C++ protocol compatibility
 ✅ Created AirLLM layer-wise inference components
-🚧 Need to implement tensor operations and synchronization
-🚧 Need to integrate model header parsing
-📋 Next: Implement tensor ops OR parse model header to get exact offsets
+✅ Implemented model header parser (supports LLAMA, QWEN3, QWEN3_MOE)
+✅ Implemented weight offset calculator (handles F32, Q40, Q80)
+✅ Integrated header parsing with layer engine
+🚧 Need to implement tensor operations (matmul, attention, etc.)
+🚧 Need to implement activation synchronization
+📋 Next: Implement layer caching OR implement tensor operations
 
