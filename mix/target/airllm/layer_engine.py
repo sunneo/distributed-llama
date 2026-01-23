@@ -10,8 +10,10 @@ Key concept: Only keep 1-2 layers in RAM at a time, load others from disk as nee
 import numpy as np
 from typing import Optional, List, Dict, Tuple
 from pathlib import Path
-from .model_header import ModelHeader, parse_model_header, print_model_header
+from .model_header import ModelHeader, parse_model_header, print_model_header, HiddenAct
 from .weight_offsets import WeightOffsetCalculator, LayerWeightOffsets
+from . import tensor_ops
+from .layer_cache import LayerCache
 
 
 class MemoryMappedWeights:
@@ -155,15 +157,17 @@ class LayerWiseInferenceEngine:
     Layer-wise inference engine for AirLLM.
     
     Executes model layer-by-layer, swapping weights from disk.
-    Only keeps current layer weights in RAM.
+    Only keeps current layer weights in RAM with LRU caching.
     """
     
-    def __init__(self, model_path: str):
+    def __init__(self, model_path: str, cache_size: int = 2, max_memory_gb: float = 4.0):
         """
         Initialize inference engine.
         
         Args:
             model_path: Path to model file
+            cache_size: Maximum number of layers to cache
+            max_memory_gb: Maximum memory for cache in GB
         """
         self.model_path = model_path
         self.header: Optional[ModelHeader] = None
@@ -171,6 +175,9 @@ class LayerWiseInferenceEngine:
         
         self.current_layer: Optional[int] = None
         self.current_weights: Optional[Dict[str, np.ndarray]] = None
+        
+        # Layer cache with LRU eviction
+        self.cache = LayerCache(max_layers=cache_size, max_memory_gb=max_memory_gb)
     
     def initialize(self) -> None:
         """Initialize the engine by parsing model header."""
@@ -184,63 +191,147 @@ class LayerWiseInferenceEngine:
         
         print(f"\nInitialized layer-wise engine for {self.header.n_layers} layers")
     
-    def load_layer(self, layer_id: int) -> None:
+    def load_layer(self, layer_id: int, prefetch_next: bool = True) -> None:
         """
-        Load weights for a specific layer.
+        Load weights for a specific layer with caching.
         
         Args:
             layer_id: Layer index to load
+            prefetch_next: Whether to prefetch next layer
         """
-        if self.current_layer == layer_id and self.current_weights is not None:
-            return  # Already loaded
+        # Check cache first
+        cached_weights = self.cache.get(layer_id)
+        if cached_weights is not None:
+            self.current_weights = cached_weights
+            self.current_layer = layer_id
+            print(f"Loaded layer {layer_id} from cache")
+            
+            # Prefetch next layer if requested
+            if prefetch_next and layer_id + 1 < self.header.n_layers:
+                self.cache.prefetch(layer_id + 1)
+            
+            return
         
         if self.weights_loader is None:
             raise RuntimeError("Engine not initialized")
         
-        # Load all weights for this layer
-        self.current_weights = self.weights_loader.load_layer_weights(layer_id)
+        # Mark as loading
+        self.cache.mark_loading(layer_id)
+        
+        # Load all weights for this layer from disk
+        weights = self.weights_loader.load_layer_weights(layer_id)
+        
+        # Update cache
+        self.cache.put(layer_id, weights)
+        
+        # Update current layer
+        self.current_weights = weights
         self.current_layer = layer_id
         
-        total_size = sum(w.nbytes for w in self.current_weights.values())
-        print(f"Loaded layer {layer_id} ({total_size / 1024 / 1024:.2f} MB)")
+        total_size = sum(w.nbytes for w in weights.values())
+        print(f"Loaded layer {layer_id} from disk ({total_size / 1024 / 1024:.2f} MB)")
+        
+        # Prefetch next layer if requested
+        if prefetch_next and layer_id + 1 < self.header.n_layers:
+            self.cache.prefetch(layer_id + 1)
     
-    def execute_layer(self, layer_id: int, x: np.ndarray) -> np.ndarray:
+    def execute_layer(self, layer_id: int, x: np.ndarray, pos: int = 0,
+                     kv_cache: Optional[Tuple[np.ndarray, np.ndarray]] = None) -> Tuple[np.ndarray, Optional[Tuple[np.ndarray, np.ndarray]]]:
         """
         Execute a single transformer layer.
         
         Args:
             layer_id: Layer index
-            x: Input activations
+            x: Input activations of shape (seq_len, dim)
+            pos: Current position in sequence (for RoPE)
+            kv_cache: Optional tuple of (key_cache, value_cache) for autoregressive generation
             
         Returns:
-            Output activations
+            Tuple of (output_activations, updated_kv_cache)
         """
         # Load layer weights if not already loaded
         self.load_layer(layer_id)
         
-        # TODO: Implement actual layer computation
-        # - RMS normalization
-        # - Attention (Q, K, V, O projections + multi-head attention)
-        # - FFN (W1, W2, W3 with SiLU/GELU activation)
+        if self.header is None or self.current_weights is None:
+            raise RuntimeError("Layer not loaded")
         
-        print(f"TODO: Execute layer {layer_id}")
-        return x  # Placeholder
+        weights = self.current_weights
+        
+        # 1. Pre-attention RMS normalization
+        x_norm = tensor_ops.rms_norm(x, weights['attn_norm'], eps=1e-6)
+        
+        # 2. Attention projections
+        q = tensor_ops.matmul_f32(x_norm, weights['wq'])  # (seq_len, q_dim)
+        k = tensor_ops.matmul_f32(x_norm, weights['wk'])  # (seq_len, kv_dim)
+        v = tensor_ops.matmul_f32(x_norm, weights['wv'])  # (seq_len, kv_dim)
+        
+        # 3. Apply RoPE to Q and K
+        q, k = tensor_ops.apply_rope(
+            q, k, pos,
+            head_dim=self.header.head_dim,
+            rope_theta=self.header.rope_theta,
+            rope_type=self.header.rope_type
+        )
+        
+        # 4. Update KV cache if provided
+        if kv_cache is not None:
+            k_cache, v_cache = kv_cache
+            # Append to cache
+            k = np.concatenate([k_cache, k], axis=0)
+            v = np.concatenate([v_cache, v], axis=0)
+            kv_cache = (k, v)
+        
+        # 5. Multi-head attention
+        attn_output = tensor_ops.multi_head_attention(
+            q, k, v,
+            n_heads=self.header.n_heads,
+            n_kv_heads=self.header.n_kv_heads
+        )
+        
+        # 6. Attention output projection
+        attn_output = tensor_ops.matmul_f32(attn_output, weights['wo'])
+        
+        # 7. Residual connection
+        x = x + attn_output
+        
+        # 8. Pre-FFN RMS normalization
+        x_norm = tensor_ops.rms_norm(x, weights['ffn_norm'], eps=1e-6)
+        
+        # 9. Feed-forward network
+        # Determine activation function
+        activation = 'silu' if self.header.act == HiddenAct.SILU else 'gelu'
+        ffn_output = tensor_ops.feed_forward(
+            x_norm, weights['w1'], weights['w2'], weights['w3'],
+            activation=activation
+        )
+        
+        # 10. Residual connection
+        x = x + ffn_output
+        
+        return x, kv_cache
     
-    def forward(self, x: np.ndarray) -> np.ndarray:
+    def forward(self, x: np.ndarray, start_pos: int = 0,
+                use_cache: bool = False) -> np.ndarray:
         """
         Run forward pass through all layers.
         
         Args:
-            x: Input tokens/embeddings
+            x: Input tokens/embeddings of shape (seq_len, dim)
+            start_pos: Starting position for RoPE
+            use_cache: Whether to use KV caching for autoregressive generation
             
         Returns:
-            Output activations
+            Output activations of shape (seq_len, dim)
         """
         if self.header is None:
             raise RuntimeError("Engine not initialized")
         
+        # Initialize KV cache if using cache
+        kv_caches = [None] * self.header.n_layers if use_cache else [None] * self.header.n_layers
+        
         for layer_id in range(self.header.n_layers):
-            x = self.execute_layer(layer_id, x)
+            pos = start_pos  # Position for current token
+            x, kv_caches[layer_id] = self.execute_layer(layer_id, x, pos, kv_caches[layer_id])
         
         return x
     
@@ -248,3 +339,4 @@ class LayerWiseInferenceEngine:
         """Clean up resources."""
         if self.weights_loader:
             self.weights_loader.close()
+        self.cache.clear()
