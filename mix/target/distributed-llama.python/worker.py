@@ -13,12 +13,16 @@ import numpy as np
 from typing import Optional, Dict, List
 from .network import NetworkClient
 from .config import ConfigReader, NetConfig, NodeConfig
-import sys
-import os
 
-# Add parent directory to path to import airllm
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from airllm.layer_engine import LayerWiseInferenceEngine
+# Import from sibling package
+try:
+    from airllm.layer_engine import LayerWiseInferenceEngine
+except ImportError:
+    # Fallback for development
+    import sys
+    import os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+    from airllm.layer_engine import LayerWiseInferenceEngine
 
 
 class Worker:

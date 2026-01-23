@@ -8,8 +8,8 @@ import numpy as np
 import sys
 import os
 
-# Add parent directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+# Add parent directory to path for development/testing
+sys.path.insert(0, os.path.dirname(__file__))
 
 from airllm import tensor_ops
 from airllm.model_header import RopeType

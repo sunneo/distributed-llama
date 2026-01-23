@@ -58,9 +58,9 @@ def dequantize_q40(data: np.ndarray, shape: Tuple[int, ...]) -> np.ndarray:
     """
     Dequantize Q4_0 format to F32.
     
-    Q4_0 format: 4-bit quantization with 16 values per block
-    Each block has: 1 float32 scale + 16 int4 values (8 bytes)
-    Block size: 20 bytes (4 + 16)
+    Q4_0 format: 4-bit quantization with 32 values per block
+    Each block has: 1 float16 scale + 16 packed int4 values (8 bytes)
+    Block size: 18 bytes (2 + 16)
     
     Args:
         data: Raw quantized data as uint8 array
@@ -184,8 +184,7 @@ def matmul_quantized(x: np.ndarray, weight_data: np.ndarray,
 
 
 def apply_rope(q: np.ndarray, k: np.ndarray, pos: int, 
-               head_dim: int, rope_theta: float = 10000.0,
-               rope_type: RopeType = RopeType.LLAMA) -> Tuple[np.ndarray, np.ndarray]:
+               head_dim: int, rope_theta: float = 10000.0) -> Tuple[np.ndarray, np.ndarray]:
     """
     Apply Rotary Position Embedding (RoPE) to query and key tensors.
     
@@ -198,7 +197,6 @@ def apply_rope(q: np.ndarray, k: np.ndarray, pos: int,
         pos: Current position in sequence
         head_dim: Dimension of each attention head
         rope_theta: Theta parameter for rotation frequency
-        rope_type: Type of RoPE (LLAMA, FALCON, etc.)
         
     Returns:
         Tuple of (rotated_q, rotated_k)

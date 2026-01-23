@@ -269,8 +269,7 @@ class LayerWiseInferenceEngine:
         q, k = tensor_ops.apply_rope(
             q, k, pos,
             head_dim=self.header.head_dim,
-            rope_theta=self.header.rope_theta,
-            rope_type=self.header.rope_type
+            rope_theta=self.header.rope_theta
         )
         
         # 4. Update KV cache if provided
@@ -327,7 +326,7 @@ class LayerWiseInferenceEngine:
             raise RuntimeError("Engine not initialized")
         
         # Initialize KV cache if using cache
-        kv_caches = [None] * self.header.n_layers if use_cache else [None] * self.header.n_layers
+        kv_caches = [None] * self.header.n_layers
         
         for layer_id in range(self.header.n_layers):
             pos = start_pos  # Position for current token
