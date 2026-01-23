@@ -2,6 +2,21 @@
 
 This directory contains the merged implementation of **Distributed-Llama** and **AirLLM** concepts, creating a system for running large language models (30B+) on distributed consumer hardware.
 
+## Directory Structure
+
+```
+mix/
+├── README.md                    # This file
+├── PLAN.md                     # Detailed task tracking
+├── IMPLEMENTATION_SUMMARY.md   # Implementation summary
+├── src/                        # Reference sources (original implementations)
+│   ├── airllm/                # Reference: AirLLM concepts
+│   └── distributed-llama.python/  # Reference: Initial implementations
+└── target/                     # Final merged implementation
+    ├── airllm/                # AirLLM layer-wise inference engine
+    └── distributed-llama.python/  # Python worker for distributed inference
+```
+
 ## Core Concept: "Shared-Storage Zero-Data Movement"
 
 Instead of distributing model weights across nodes:
@@ -32,9 +47,9 @@ All nodes: Same 30B model file on local storage
 Network: Only activation tensors (~few KB per token)
 ```
 
-## Components
+## Components (in target/)
 
-### 1. Distributed-Llama Python Worker (`distributed-llama.python/`)
+### 1. Distributed-Llama Python Worker (`target/distributed-llama.python/`)
 
 Python implementation of a worker node compatible with the C++ root node.
 
@@ -51,7 +66,7 @@ Python implementation of a worker node compatible with the C++ root node.
 - `worker.py`: Main worker loop
 - `README.md`: Documentation
 
-### 2. AirLLM Layer-wise Engine (`airllm/`)
+### 2. AirLLM Layer-wise Engine (`target/airllm/`)
 
 Layer-wise inference engine for memory-efficient model execution.
 
@@ -125,14 +140,14 @@ Layer-wise inference engine for memory-efficient model execution.
 ### Parse Model Header
 
 ```bash
-cd mix/src/airllm
+cd mix/target/airllm
 python examples/parse_header.py /path/to/model.m
 ```
 
 ### Run Python Worker (when complete)
 
 ```bash
-cd mix/src/distributed-llama.python
+cd mix/target/distributed-llama.python
 python -m worker --host 192.168.1.100 --port 9999 --model /path/to/model.m
 ```
 
@@ -143,9 +158,11 @@ python -m worker --host 192.168.1.100 --port 9999 --model /path/to/model.m
 ./dllama inference --model model.m --workers 192.168.1.2:9999 192.168.1.3:9999
 
 # Terminal 2: Start Python worker 1
+cd mix/target/distributed-llama.python
 python -m worker --host 192.168.1.1 --port 9999 --model /mnt/ssd/model.m
 
 # Terminal 3: Start Python worker 2
+cd mix/target/distributed-llama.python
 python -m worker --host 192.168.1.1 --port 9999 --model /mnt/ssd/model.m
 ```
 
@@ -164,10 +181,12 @@ python -m worker --host 192.168.1.1 --port 9999 --model /mnt/ssd/model.m
 
 ```bash
 # Install dependencies
-pip install -r distributed-llama.python/requirements.txt
+cd mix/target/distributed-llama.python
+pip install -r requirements.txt
 
 # Run header parser test (requires actual model file)
-python airllm/examples/parse_header.py /path/to/model.m
+cd mix/target/airllm
+python examples/parse_header.py /path/to/model.m
 ```
 
 ## Development Roadmap
@@ -232,10 +251,11 @@ Layer contents:
 
 When implementing new features:
 
-1. Mark TODOs in code and `PLAN.md`
-2. Update progress in `PLAN.md` 
-3. Add examples in `examples/`
-4. Document in relevant README
+1. Work in `target/` directory for final implementation
+2. Mark TODOs in code and `PLAN.md`
+3. Update progress in `PLAN.md` 
+4. Add examples in `target/*/examples/`
+5. Document in relevant README
 
 ## License
 
