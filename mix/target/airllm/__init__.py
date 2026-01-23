@@ -26,6 +26,8 @@ from .weight_offsets import (
     WeightOffsetCalculator,
     LayerWeightOffsets
 )
+from .layer_cache import LayerCache
+from . import tensor_ops
 
 __all__ = [
     'MemoryMappedWeights', 
@@ -38,5 +40,7 @@ __all__ = [
     'HiddenAct',
     'RopeType',
     'WeightOffsetCalculator',
-    'LayerWeightOffsets'
+    'LayerWeightOffsets',
+    'LayerCache',
+    'tensor_ops'
 ]
