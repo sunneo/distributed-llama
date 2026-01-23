@@ -128,7 +128,7 @@ def dequantize_q80(data: np.ndarray, shape: Tuple[int, ...]) -> np.ndarray:
     bytes_per_block = 34  # 2 (scale as fp16) + 32 (int8 values)
     
     n_elements = np.prod(shape)
-    n_blocks = (n_blocks + block_size - 1) // block_size
+    n_blocks = (n_elements + block_size - 1) // block_size
     
     output = np.zeros(n_elements, dtype=np.float32)
     
@@ -193,8 +193,8 @@ def apply_rope(q: np.ndarray, k: np.ndarray, pos: int,
     This encodes positional information without explicit position embeddings.
     
     Args:
-        q: Query tensor of shape (..., n_heads, head_dim)
-        k: Key tensor of shape (..., n_kv_heads, head_dim)
+        q: Query tensor of shape (seq_len, q_dim)
+        k: Key tensor of shape (seq_len, kv_dim)
         pos: Current position in sequence
         head_dim: Dimension of each attention head
         rope_theta: Theta parameter for rotation frequency
@@ -217,21 +217,29 @@ def apply_rope(q: np.ndarray, k: np.ndarray, pos: int,
     
     def rotate(x: np.ndarray) -> np.ndarray:
         """Apply rotation to tensor."""
-        # Reshape to separate even/odd indices
-        # x shape: (..., n_heads, head_dim)
-        x_reshape = x.reshape(*x.shape[:-1], -1, 2)  # (..., n_heads, dim_pairs, 2)
+        # x shape: (seq_len, total_dim)
+        seq_len, total_dim = x.shape
+        n_heads_local = total_dim // head_dim
+        
+        # Reshape to separate heads and dimensions
+        x_reshape = x.reshape(seq_len, n_heads_local, head_dim)
+        
+        # Further reshape to separate even/odd indices
+        x_reshape = x_reshape.reshape(seq_len, n_heads_local, -1, 2)  # (seq_len, n_heads, dim_pairs, 2)
         
         # Extract even and odd
-        x_even = x_reshape[..., 0]  # (..., n_heads, dim_pairs)
-        x_odd = x_reshape[..., 1]   # (..., n_heads, dim_pairs)
+        x_even = x_reshape[..., 0]  # (seq_len, n_heads, dim_pairs)
+        x_odd = x_reshape[..., 1]   # (seq_len, n_heads, dim_pairs)
         
         # Apply rotation: [cos, -sin; sin, cos]
-        x_even_rot = x_even * cos - x_odd * sin
-        x_odd_rot = x_even * sin + x_odd * cos
+        # Broadcast cos and sin to match shape
+        x_even_rot = x_even * cos[None, None, :] - x_odd * sin[None, None, :]
+        x_odd_rot = x_even * sin[None, None, :] + x_odd * cos[None, None, :]
         
         # Interleave back
         x_rot = np.stack([x_even_rot, x_odd_rot], axis=-1)
-        return x_rot.reshape(x.shape)
+        x_rot = x_rot.reshape(seq_len, n_heads_local, head_dim)
+        return x_rot.reshape(seq_len, total_dim)
     
     q_rot = rotate(q)
     k_rot = rotate(k)
