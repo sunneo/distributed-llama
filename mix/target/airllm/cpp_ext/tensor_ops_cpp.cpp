@@ -331,6 +331,11 @@ py::array_t<float> gelu_cpp(py::array_t<float> x) {
 // ============================================================================
 // Matrix multiplication with multi-level optimizations
 // ============================================================================
+// Note: This is a simple blocked implementation with SIMD.
+// For production use, consider using BLAS (cblas_sgemm) or optimized kernels
+// like those from llamafile. The current SIMD approach uses scattered memory
+// access (_mm256_set_ps) which is not optimal for GEMM but provides moderate
+// speedup over pure scalar code.
 
 py::array_t<float> matmul_cpp(py::array_t<float> a, py::array_t<float> b) {
     auto a_buf = a.request();
@@ -431,10 +436,7 @@ std::string get_optimization_info() {
     info += "  SIMD Level: " SIMD_LEVEL "\n";
     info += "  OpenMP: ";
 #if HAS_OPENMP
-    info += "Enabled";
-#if HAS_OPENMP
-    info += " (max threads: " + std::to_string(omp_get_max_threads()) + ")";
-#endif
+    info += "Enabled (max threads: " + std::to_string(omp_get_max_threads()) + ")";
 #else
     info += "Disabled";
 #endif

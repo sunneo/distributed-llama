@@ -15,8 +15,19 @@
 #include <pybind11/numpy.h>
 #include <cuda_runtime.h>
 #include <cmath>
+#include <stdexcept>
+#include <string>
 
 namespace py = pybind11;
+
+// Helper macro for CUDA error checking
+#define CUDA_CHECK(call) \
+    do { \
+        cudaError_t err = call; \
+        if (err != cudaSuccess) { \
+            throw std::runtime_error("CUDA error: " + std::string(cudaGetErrorString(err))); \
+        } \
+    } while (0)
 
 // CUDA kernel for RMS normalization
 __global__ void rms_norm_kernel(const float* x, const float* weight, float* out, 
@@ -80,14 +91,10 @@ py::array_t<float> rms_norm_cuda(py::array_t<float> x, py::array_t<float> weight
     
     // Allocate device memory
     float *d_x, *d_w, *d_out;
-    cudaError_t err;
     
-    err = cudaMalloc(&d_x, total_size * sizeof(float));
-    if (err != cudaSuccess) {
-        throw std::runtime_error("CUDA malloc failed for x: " + std::string(cudaGetErrorString(err)));
-    }
+    CUDA_CHECK(cudaMalloc(&d_x, total_size * sizeof(float)));
     
-    err = cudaMalloc(&d_w, dim * sizeof(float));
+    cudaError_t err = cudaMalloc(&d_w, dim * sizeof(float));
     if (err != cudaSuccess) {
         cudaFree(d_x);
         throw std::runtime_error("CUDA malloc failed for weight: " + std::string(cudaGetErrorString(err)));
@@ -101,8 +108,8 @@ py::array_t<float> rms_norm_cuda(py::array_t<float> x, py::array_t<float> weight
     }
     
     // Copy to device
-    cudaMemcpy(d_x, x_ptr, total_size * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_w, w_ptr, dim * sizeof(float), cudaMemcpyHostToDevice);
+    CUDA_CHECK(cudaMemcpy(d_x, x_ptr, total_size * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_w, w_ptr, dim * sizeof(float), cudaMemcpyHostToDevice));
     
     // Launch kernel
     int threads = 256;
@@ -110,16 +117,11 @@ py::array_t<float> rms_norm_cuda(py::array_t<float> x, py::array_t<float> weight
     rms_norm_kernel<<<blocks, threads>>>(d_x, d_w, d_out, dim, n_rows, eps);
     
     // Check for kernel errors
-    err = cudaGetLastError();
-    if (err != cudaSuccess) {
-        cudaFree(d_x);
-        cudaFree(d_w);
-        cudaFree(d_out);
-        throw std::runtime_error("CUDA kernel failed: " + std::string(cudaGetErrorString(err)));
-    }
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
     
     // Copy back to host
-    cudaMemcpy(out_ptr, d_out, total_size * sizeof(float), cudaMemcpyDeviceToHost);
+    CUDA_CHECK(cudaMemcpy(out_ptr, d_out, total_size * sizeof(float), cudaMemcpyDeviceToHost));
     
     // Free device memory
     cudaFree(d_x);
@@ -139,16 +141,24 @@ py::array_t<float> silu_cuda(py::array_t<float> x) {
     size_t size = x_buf.size;
     
     float *d_x, *d_out;
-    cudaMalloc(&d_x, size * sizeof(float));
-    cudaMalloc(&d_out, size * sizeof(float));
+    CUDA_CHECK(cudaMalloc(&d_x, size * sizeof(float)));
     
-    cudaMemcpy(d_x, x_ptr, size * sizeof(float), cudaMemcpyHostToDevice);
+    cudaError_t err = cudaMalloc(&d_out, size * sizeof(float));
+    if (err != cudaSuccess) {
+        cudaFree(d_x);
+        throw std::runtime_error("CUDA malloc failed: " + std::string(cudaGetErrorString(err)));
+    }
+    
+    CUDA_CHECK(cudaMemcpy(d_x, x_ptr, size * sizeof(float), cudaMemcpyHostToDevice));
     
     int threads = 256;
     int blocks = (size + threads - 1) / threads;
     silu_kernel<<<blocks, threads>>>(d_x, d_out, size);
     
-    cudaMemcpy(out_ptr, d_out, size * sizeof(float), cudaMemcpyDeviceToHost);
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+    
+    CUDA_CHECK(cudaMemcpy(out_ptr, d_out, size * sizeof(float), cudaMemcpyDeviceToHost));
     
     cudaFree(d_x);
     cudaFree(d_out);
@@ -166,16 +176,24 @@ py::array_t<float> gelu_cuda(py::array_t<float> x) {
     size_t size = x_buf.size;
     
     float *d_x, *d_out;
-    cudaMalloc(&d_x, size * sizeof(float));
-    cudaMalloc(&d_out, size * sizeof(float));
+    CUDA_CHECK(cudaMalloc(&d_x, size * sizeof(float)));
     
-    cudaMemcpy(d_x, x_ptr, size * sizeof(float), cudaMemcpyHostToDevice);
+    cudaError_t err = cudaMalloc(&d_out, size * sizeof(float));
+    if (err != cudaSuccess) {
+        cudaFree(d_x);
+        throw std::runtime_error("CUDA malloc failed: " + std::string(cudaGetErrorString(err)));
+    }
+    
+    CUDA_CHECK(cudaMemcpy(d_x, x_ptr, size * sizeof(float), cudaMemcpyHostToDevice));
     
     int threads = 256;
     int blocks = (size + threads - 1) / threads;
     gelu_kernel<<<blocks, threads>>>(d_x, d_out, size);
     
-    cudaMemcpy(out_ptr, d_out, size * sizeof(float), cudaMemcpyDeviceToHost);
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+    
+    CUDA_CHECK(cudaMemcpy(out_ptr, d_out, size * sizeof(float), cudaMemcpyDeviceToHost));
     
     cudaFree(d_x);
     cudaFree(d_out);
