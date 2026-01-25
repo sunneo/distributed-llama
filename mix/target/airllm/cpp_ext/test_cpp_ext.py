@@ -6,7 +6,11 @@ This tests the C++ implementations and compares them with Python versions.
 
 import sys
 import os
-sys.path.insert(0, os.path.dirname(__file__))
+
+# Add parent directory to path for imports (done once at module level)
+_airllm_dir = os.path.join(os.path.dirname(__file__), '..')
+if _airllm_dir not in sys.path:
+    sys.path.insert(0, _airllm_dir)
 
 import numpy as np
 
@@ -46,9 +50,6 @@ def test_rms_norm():
         return
     
     # Import Python version for comparison - import tensor_ops module directly
-    # Add the parent directory (airllm) to path to import tensor_ops module
-    airllm_dir = os.path.join(os.path.dirname(__file__), '..')
-    sys.path.insert(0, airllm_dir)
     import tensor_ops
     
     # Test data
@@ -82,10 +83,7 @@ def test_activations():
         print("Skipping (C++ extension not available)")
         return
     
-    # Import Python version for comparison - import tensor_ops module directly
-    # Add the parent directory (airllm) to path to import tensor_ops module
-    airllm_dir = os.path.join(os.path.dirname(__file__), '..')
-    sys.path.insert(0, airllm_dir)
+    # Import Python version for comparison
     import tensor_ops
     
     # Test data
@@ -120,10 +118,7 @@ def benchmark_cpp_vs_python():
     
     import time
     
-    # Import Python version - import tensor_ops module directly
-    # Add the parent directory (airllm) to path to import tensor_ops module
-    airllm_dir = os.path.join(os.path.dirname(__file__), '..')
-    sys.path.insert(0, airllm_dir)
+    # Import Python version
     import tensor_ops
     
     # Test data
