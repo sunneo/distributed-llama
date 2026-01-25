@@ -473,7 +473,37 @@ result = tensor_ops_opencl.rms_norm(x, weight)
 
 **Note**: Vulkan backend implementation is planned but not yet available. The main distributed-llama project already has Vulkan support in the C++ codebase (see `src/nn/nn-vulkan.cpp`).
 
-### Choosing the Right Backend
+## Automated Backend Selection
+
+The `tensor_ops` module provides automatic backend selection that picks the fastest available backend:
+
+```python
+from airllm import tensor_ops
+
+# Automatically uses: CUDA > OpenCL > C++ > Python
+print(f"Using backend: {tensor_ops.get_backend()}")
+print("Backend info:", tensor_ops.get_backend_info())
+
+# Use tensor operations - automatically accelerated
+import numpy as np
+x = np.random.randn(128, 4096).astype(np.float32)
+weight = np.random.randn(4096).astype(np.float32)
+
+# These automatically use the best available backend
+y = tensor_ops.rms_norm(x, weight)
+y_silu = tensor_ops.silu(x)
+y_gelu = tensor_ops.gelu(x)
+```
+
+**Backend priority order**:
+1. CUDA (if available) - Best for NVIDIA GPUs
+2. OpenCL (if available) - Good for AMD/Intel GPUs
+3. C++ (if built) - Fast CPU operations with SIMD+OpenMP
+4. Python (always available) - NumPy fallback
+
+**See also**: `BACKEND_GUIDE.md` and `backend_examples.py` for detailed usage examples.
+
+## Choosing the Right Backend
 
 **For CPU-only systems**:
 - Use the default CPU backend (automatically optimized)

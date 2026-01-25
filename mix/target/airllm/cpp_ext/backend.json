@@ -1,0 +1,15 @@
+{
+  "preferred_backend": "auto",
+  "backend_priority": [
+    "cpp",
+    "cuda",
+    "opencl",
+    "python"
+  ],
+  "force_backend": null,
+  "description": {
+    "preferred_backend": "Set to 'auto' for automatic detection, or specify 'cuda', 'opencl', 'cpp', or 'python'",
+    "backend_priority": "Order of backends to try when preferred_backend is 'auto'",
+    "force_backend": "Set to a specific backend name to force its use (overrides availability checks)"
+  }
+}

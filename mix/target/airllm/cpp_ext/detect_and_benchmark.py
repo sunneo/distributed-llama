@@ -70,9 +70,59 @@ def test_extension():
     """Test the built extension."""
     print_header("Step 3: Testing Extension")
     
+    # Test all available backends
+    backends_tested = []
+    
+    # Test CUDA backend
+    try:
+        import tensor_ops_cuda
+        print("\n--- CUDA Backend ---")
+        print(tensor_ops_cuda.get_cuda_info())
+        
+        # Test basic functionality
+        x = np.random.randn(8, 128).astype(np.float32)
+        w = np.random.randn(128).astype(np.float32)
+        
+        result = tensor_ops_cuda.rms_norm(x, w)
+        print("✓ CUDA RMS norm: PASSED")
+        
+        result = tensor_ops_cuda.silu(x)
+        print("✓ CUDA SiLU: PASSED")
+        
+        result = tensor_ops_cuda.gelu(x)
+        print("✓ CUDA GELU: PASSED")
+        
+        backends_tested.append('cuda')
+    except Exception as e:
+        print(f"✗ CUDA backend not available: {e}")
+    
+    # Test OpenCL backend
+    try:
+        import tensor_ops_opencl
+        print("\n--- OpenCL Backend ---")
+        print(tensor_ops_opencl.get_opencl_info())
+        
+        # Test basic functionality
+        x = np.random.randn(8, 128).astype(np.float32)
+        w = np.random.randn(128).astype(np.float32)
+        
+        result = tensor_ops_opencl.rms_norm(x, w)
+        print("✓ OpenCL RMS norm: PASSED")
+        
+        result = tensor_ops_opencl.silu(x)
+        print("✓ OpenCL SiLU: PASSED")
+        
+        result = tensor_ops_opencl.gelu(x)
+        print("✓ OpenCL GELU: PASSED")
+        
+        backends_tested.append('opencl')
+    except Exception as e:
+        print(f"✗ OpenCL backend not available: {e}")
+    
+    # Test C++ backend
     try:
         import tensor_ops_cpp
-        
+        print("\n--- C++ Backend ---")
         print(tensor_ops_cpp.get_optimization_info())
         print()
         
@@ -81,97 +131,130 @@ def test_extension():
         w = np.random.randn(128).astype(np.float32)
         
         result = tensor_ops_cpp.rms_norm(x, w)
-        print("✓ RMS norm: PASSED")
+        print("✓ C++ RMS norm: PASSED")
         
         result = tensor_ops_cpp.silu(x)
-        print("✓ SiLU: PASSED")
+        print("✓ C++ SiLU: PASSED")
         
         result = tensor_ops_cpp.gelu(x)
-        print("✓ GELU: PASSED")
+        print("✓ C++ GELU: PASSED")
         
         a = np.random.randn(16, 32).astype(np.float32)
         b = np.random.randn(32, 24).astype(np.float32)
         result = tensor_ops_cpp.matmul(a, b)
-        print("✓ Matmul: PASSED")
+        print("✓ C++ Matmul: PASSED")
         
-        return True
-        
+        backends_tested.append('cpp')
     except Exception as e:
-        print(f"✗ Test failed: {e}")
+        print(f"✗ C++ backend not available: {e}")
+    
+    if not backends_tested:
+        print("\n✗ No accelerated backends available")
         return False
+    
+    print(f"\n✓ Tested backends: {', '.join(backends_tested)}")
+    return True
 
 def benchmark_extension():
     """Benchmark the extension."""
     print_header("Step 4: Benchmarking Performance")
     
+    # Benchmark parameters
+    iterations = 100
+    
+    # Test different sizes
+    test_sizes = [
+        (32, 512),    # Small
+        (128, 2048),  # Medium
+        (256, 4096),  # Large
+    ]
+    
+    # Try to benchmark all available backends
+    backends = []
+    
+    # Check CUDA
+    try:
+        import tensor_ops_cuda
+        backends.append(('CUDA', tensor_ops_cuda))
+    except ImportError:
+        pass
+    
+    # Check OpenCL
+    try:
+        import tensor_ops_opencl
+        backends.append(('OpenCL', tensor_ops_opencl))
+    except ImportError:
+        pass
+    
+    # Check C++
     try:
         import tensor_ops_cpp
-        
-        # Benchmark parameters
-        iterations = 100
-        
-        # Test different sizes
-        test_sizes = [
-            (32, 512),    # Small
-            (128, 2048),  # Medium
-            (256, 4096),  # Large
-        ]
-        
-        print("\nRMS Normalization Benchmark:")
-        print(f"{'Size':<15} {'Time (ms)':<12} {'Throughput (GFLOPS)':<20}")
-        print("-" * 50)
-        
-        for rows, dim in test_sizes:
-            x = np.random.randn(rows, dim).astype(np.float32)
-            w = np.random.randn(dim).astype(np.float32)
-            
-            # Warmup
-            for _ in range(5):
-                _ = tensor_ops_cpp.rms_norm(x, w)
-            
-            # Benchmark
-            start = time.perf_counter()
-            for _ in range(iterations):
-                _ = tensor_ops_cpp.rms_norm(x, w)
-            elapsed = time.perf_counter() - start
-            
-            # Calculate throughput (approximate)
-            # Each RMS norm does ~3*dim operations per row (sum_sq, scale, multiply)
-            ops = rows * dim * 3 * iterations
-            gflops = (ops / elapsed) / 1e9
-            
-            avg_time_ms = (elapsed / iterations) * 1000
-            print(f"{rows}x{dim:<10} {avg_time_ms:<12.3f} {gflops:<20.2f}")
-        
-        print("\nActivation Functions Benchmark (SiLU):")
-        print(f"{'Size':<15} {'Time (ms)':<12} {'Throughput (GFLOPS)':<20}")
-        print("-" * 50)
-        
-        for rows, dim in test_sizes:
-            x = np.random.randn(rows, dim).astype(np.float32)
-            
-            # Warmup
-            for _ in range(5):
-                _ = tensor_ops_cpp.silu(x)
-            
-            # Benchmark
-            start = time.perf_counter()
-            for _ in range(iterations):
-                _ = tensor_ops_cpp.silu(x)
-            elapsed = time.perf_counter() - start
-            
-            # SiLU: exp + division + multiplication per element (~5 ops)
-            ops = rows * dim * 5 * iterations
-            gflops = (ops / elapsed) / 1e9
-            
-            avg_time_ms = (elapsed / iterations) * 1000
-            print(f"{rows}x{dim:<10} {avg_time_ms:<12.3f} {gflops:<20.2f}")
-        
-        return True
-        
-    except Exception as e:
-        print(f"✗ Benchmark failed: {e}")
+        backends.append(('C++', tensor_ops_cpp))
+    except ImportError:
+        pass
+    
+    if not backends:
+        print("✗ No accelerated backends available for benchmarking")
         return False
+    
+    for backend_name, backend_module in backends:
+        print(f"\n=== {backend_name} Backend Benchmark ===")
+        
+        try:
+            print("\nRMS Normalization Benchmark:")
+            print(f"{'Size':<15} {'Time (ms)':<12} {'Throughput (GFLOPS)':<20}")
+            print("-" * 50)
+            
+            for rows, dim in test_sizes:
+                x = np.random.randn(rows, dim).astype(np.float32)
+                w = np.random.randn(dim).astype(np.float32)
+                
+                # Warmup
+                for _ in range(5):
+                    _ = backend_module.rms_norm(x, w)
+                
+                # Benchmark
+                start = time.perf_counter()
+                for _ in range(iterations):
+                    _ = backend_module.rms_norm(x, w)
+                elapsed = time.perf_counter() - start
+                
+                # Calculate throughput (approximate)
+                ops = rows * dim * 3 * iterations
+                gflops = (ops / elapsed) / 1e9
+                
+                avg_time_ms = (elapsed / iterations) * 1000
+                print(f"{rows}x{dim:<10} {avg_time_ms:<12.3f} {gflops:<20.2f}")
+            
+            print("\nActivation Functions Benchmark (SiLU):")
+            print(f"{'Size':<15} {'Time (ms)':<12} {'Throughput (GFLOPS)':<20}")
+            print("-" * 50)
+            
+            for rows, dim in test_sizes:
+                x = np.random.randn(rows, dim).astype(np.float32)
+                
+                # Warmup
+                for _ in range(5):
+                    _ = backend_module.silu(x)
+                
+                # Benchmark
+                start = time.perf_counter()
+                for _ in range(iterations):
+                    _ = backend_module.silu(x)
+                elapsed = time.perf_counter() - start
+                
+                # SiLU: exp + division + multiplication per element (~5 ops)
+                ops = rows * dim * 5 * iterations
+                gflops = (ops / elapsed) / 1e9
+                
+                avg_time_ms = (elapsed / iterations) * 1000
+                print(f"{rows}x{dim:<10} {avg_time_ms:<12.3f} {gflops:<20.2f}")
+        
+        except Exception as e:
+            print(f"✗ {backend_name} benchmark failed: {e}")
+            continue
+    
+    return True
 
 def main():
     """Main function."""
@@ -207,7 +290,10 @@ def main():
     print("\nNext steps:")
     print("  - Use 'import tensor_ops_cpp' in your Python code")
     print("  - Check tensor_ops_cpp.get_optimization_info() for details")
-    print("  - For GPU backends (if available), use build_cuda or build_opencl")
+    print("  - GPU backends available:")
+    print("    * CUDA: python setup.py build_cuda")
+    print("    * OpenCL: python setup.py build_opencl")
+    print("  - Unified API: Use airllm.tensor_ops for automatic backend selection")
     
     return 0
 

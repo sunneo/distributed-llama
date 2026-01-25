@@ -374,10 +374,10 @@ class BuildCudaCommand(Command):
             return
         
         print("Building CUDA backend...")
-        # Build with nvcc
+        # Build with nvcc - use C++14 to fix template parameter pack issues
         cmd = [
-            'nvcc', '-O3', '-shared', '-Xcompiler', '-fPIC',
-            '--compiler-options', '-I' + pybind11.get_include(), '-I/usr/include/python3.10',
+            'nvcc', '-O3', '-std=c++14', '-shared', '-Xcompiler', '-fPIC',
+            '--compiler-options', '-I' + pybind11.get_include(),
             '-o', 'tensor_ops_cuda' + self._get_extension_suffix(),
             'tensor_ops_cuda.cu'
         ]
@@ -435,6 +435,92 @@ class BuildOpenCLCommand(Command):
             print("✓ OpenCL backend built successfully")
         else:
             print("✗ OpenCL backend build failed")
+
+
+class ConfigureBackendCommand(Command):
+    """Configure backend preferences."""
+    description = 'Configure backend preferences (cuda, opencl, cpp, python, or auto)'
+    user_options = [
+        ('backend=', 'b', 'Backend to use (cuda, opencl, cpp, python, or auto)'),
+        ('force', 'f', 'Force the specified backend (ignore availability)'),
+        ('priority=', 'p', 'Set backend priority order (comma-separated, e.g., "cuda,opencl,cpp,python")'),
+        ('show', 's', 'Show current backend configuration'),
+    ]
+    
+    def initialize_options(self):
+        self.backend = None
+        self.force = False
+        self.priority = None
+        self.show = False
+    
+    def finalize_options(self):
+        pass
+    
+    def run(self):
+        import json
+        
+        config_path = os.path.join(os.path.dirname(__file__) or '.', 'backend.json')
+        
+        # Load existing config
+        try:
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            config = {
+                'preferred_backend': 'auto',
+                'backend_priority': ['cuda', 'opencl', 'cpp', 'python'],
+                'force_backend': None
+            }
+        
+        # Show current configuration
+        if self.show or (not self.backend and not self.priority):
+            print("\nCurrent Backend Configuration:")
+            print(f"  Preferred backend: {config.get('preferred_backend', 'auto')}")
+            print(f"  Force backend: {config.get('force_backend', 'None')}")
+            print(f"  Priority order: {', '.join(config.get('backend_priority', []))}")
+            print(f"\nConfiguration file: {config_path}")
+            return
+        
+        # Update configuration
+        if self.backend:
+            valid_backends = ['auto', 'cuda', 'opencl', 'cpp', 'python']
+            if self.backend not in valid_backends:
+                print(f"ERROR: Invalid backend '{self.backend}'")
+                print(f"Valid options: {', '.join(valid_backends)}")
+                return
+            
+            config['preferred_backend'] = self.backend
+            
+            if self.force:
+                config['force_backend'] = self.backend if self.backend != 'auto' else None
+            else:
+                config['force_backend'] = None
+            
+            print(f"✓ Backend preference set to: {self.backend}")
+            if self.force:
+                print("  (forced mode - will fail if backend not available)")
+        
+        if self.priority:
+            priority_list = [b.strip() for b in self.priority.split(',')]
+            valid_backends = ['cuda', 'opencl', 'cpp', 'python']
+            
+            # Validate priority list
+            for b in priority_list:
+                if b not in valid_backends:
+                    print(f"ERROR: Invalid backend '{b}' in priority list")
+                    print(f"Valid options: {', '.join(valid_backends)}")
+                    return
+            
+            config['backend_priority'] = priority_list
+            print(f"✓ Backend priority set to: {', '.join(priority_list)}")
+        
+        # Save configuration
+        try:
+            with open(config_path, 'w') as f:
+                json.dump(config, f, indent=2)
+            print(f"\n✓ Configuration saved to: {config_path}")
+        except IOError as e:
+            print(f"\n✗ Failed to save configuration: {e}")
 
 
 class CustomBuildExt(build_ext):
@@ -505,6 +591,7 @@ setup(
         'test_capabilities': TestCapabilitiesCommand,
         'build_cuda': BuildCudaCommand,
         'build_opencl': BuildOpenCLCommand,
+        'configure_backend': ConfigureBackendCommand,
     },
     zip_safe=False,
 )

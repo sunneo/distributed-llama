@@ -8,11 +8,180 @@ This module implements the core tensor operations needed for transformer layers:
 - Multi-head attention
 - Activation functions (SiLU, GELU)
 - Feed-forward network (FFN)
+
+Automatically detects and uses accelerated backends (CUDA, OpenCL, C++) when available.
 """
 
 import numpy as np
 from typing import Tuple, Optional
-from .model_header import ModelHeader, RopeType
+import os
+import json
+
+# Try to import model_header, but make it optional for standalone usage
+try:
+    from .model_header import ModelHeader, RopeType
+except ImportError:
+    try:
+        from model_header import ModelHeader, RopeType
+    except ImportError:
+        # Define minimal types for standalone usage
+        ModelHeader = None
+        RopeType = None
+
+# Backend detection
+_backend = None
+_backend_module = None
+_backend_config = None
+
+def _load_backend_config():
+    """Load backend configuration from JSON file."""
+    global _backend_config
+    
+    if _backend_config is not None:
+        return _backend_config
+    
+    # Try to find backend.json in common locations
+    config_paths = [
+        # In cpp_ext directory (where backend.json is stored)
+        os.path.join(os.path.dirname(__file__), 'cpp_ext', 'backend.json'),
+        # In parent directory
+        os.path.join(os.path.dirname(__file__), '..', 'cpp_ext', 'backend.json'),
+        # Absolute path for when imported from different locations
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cpp_ext', 'backend.json'),
+    ]
+    
+    for config_path in config_paths:
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, 'r') as f:
+                    _backend_config = json.load(f)
+                    return _backend_config
+            except (json.JSONDecodeError, IOError):
+                pass
+    
+    # Default configuration if file not found
+    _backend_config = {
+        'preferred_backend': 'auto',
+        'backend_priority': ['cuda', 'opencl', 'cpp', 'python'],
+        'force_backend': None
+    }
+    return _backend_config
+
+def _try_import_backend(module_name):
+    """Try to import a backend module, returning the module if successful, None otherwise."""
+    try:
+        return __import__(module_name)
+    except (ImportError, ModuleNotFoundError):
+        return None
+
+def _detect_backend():
+    """Detect and initialize the best available backend based on configuration."""
+    global _backend, _backend_module
+    
+    if _backend is not None:
+        return _backend
+    
+    # Load configuration
+    config = _load_backend_config()
+    
+    # Check if a specific backend is forced
+    force_backend = config.get('force_backend')
+    if force_backend and force_backend != 'auto':
+        module_name = f'tensor_ops_{force_backend}' if force_backend != 'python' else None
+        if module_name:
+            module = _try_import_backend(module_name)
+            if module is not None:
+                _backend = force_backend
+                _backend_module = module
+                return _backend
+            # If forced backend not available, fall through to auto-detection
+        else:
+            # Forced to use Python
+            _backend = 'python'
+            _backend_module = None
+            return _backend
+    
+    # Check preferred backend
+    preferred = config.get('preferred_backend', 'auto')
+    if preferred != 'auto':
+        module_name = f'tensor_ops_{preferred}' if preferred != 'python' else None
+        if module_name:
+            module = _try_import_backend(module_name)
+            if module is not None:
+                _backend = preferred
+                _backend_module = module
+                return _backend
+        elif preferred == 'python':
+            _backend = 'python'
+            _backend_module = None
+            return _backend
+    
+    # Auto-detection based on priority
+    priority = config.get('backend_priority', ['cuda', 'opencl', 'cpp', 'python'])
+    for backend_name in priority:
+        if backend_name == 'python':
+            # Python is always available as fallback
+            continue
+        
+        module_name = f'tensor_ops_{backend_name}'
+        module = _try_import_backend(module_name)
+        if module is not None:
+            _backend = backend_name
+            _backend_module = module
+            return _backend
+    
+    # Fall back to pure Python
+    _backend = 'python'
+    _backend_module = None
+    return _backend
+
+def _ensure_backend():
+    """Ensure backend is initialized (lazy initialization helper)."""
+    if _backend is None:
+        _detect_backend()
+
+# Use lazy initialization - detect backend on first use, not at module import
+# _ensure_backend() will be called when needed
+
+def get_backend():
+    """Get the currently active backend name."""
+    # Lazy initialization - detect on first use
+    _ensure_backend()
+    return _backend
+
+def get_backend_info():
+    """Get information about the active backend."""
+    # Lazy initialization - detect on first use
+    _ensure_backend()
+        
+    info = {
+        'backend': _backend,
+        'available_backends': [],
+        'config': _load_backend_config()
+    }
+    
+    # Check all available backends using helper function
+    if _try_import_backend('tensor_ops_cuda') is not None:
+        info['available_backends'].append('cuda')
+    
+    if _try_import_backend('tensor_ops_opencl') is not None:
+        info['available_backends'].append('opencl')
+    
+    if _try_import_backend('tensor_ops_cpp') is not None:
+        info['available_backends'].append('cpp')
+    
+    info['available_backends'].append('python')
+    
+    # Add backend-specific info
+    if _backend_module is not None:
+        if hasattr(_backend_module, 'get_cuda_info'):
+            info['cuda_info'] = _backend_module.get_cuda_info()
+        elif hasattr(_backend_module, 'get_opencl_info'):
+            info['opencl_info'] = _backend_module.get_opencl_info()
+        elif hasattr(_backend_module, 'get_optimization_info'):
+            info['cpp_info'] = _backend_module.get_optimization_info()
+    
+    return info
 
 
 def rms_norm(x: np.ndarray, weight: np.ndarray, eps: float = 1e-6) -> np.ndarray:
@@ -30,6 +199,14 @@ def rms_norm(x: np.ndarray, weight: np.ndarray, eps: float = 1e-6) -> np.ndarray
     Returns:
         Normalized tensor of same shape as input
     """
+    # Lazy initialization of backend
+    _ensure_backend()
+    
+    # Use accelerated backend if available
+    if _backend_module is not None and hasattr(_backend_module, 'rms_norm'):
+        return _backend_module.rms_norm(x, weight, eps)
+    
+    # Python fallback implementation
     # Compute RMS: sqrt(mean(x^2))
     rms = np.sqrt(np.mean(x * x, axis=-1, keepdims=True) + eps)
     
@@ -320,6 +497,14 @@ def silu(x: np.ndarray) -> np.ndarray:
     Returns:
         Activated tensor of same shape
     """
+    # Lazy initialization of backend
+    _ensure_backend()
+    
+    # Use accelerated backend if available
+    if _backend_module is not None and hasattr(_backend_module, 'silu'):
+        return _backend_module.silu(x)
+    
+    # Python fallback implementation
     return x / (1.0 + np.exp(-x))
 
 
@@ -335,6 +520,14 @@ def gelu(x: np.ndarray) -> np.ndarray:
     Returns:
         Activated tensor of same shape
     """
+    # Lazy initialization of backend
+    _ensure_backend()
+    
+    # Use accelerated backend if available
+    if _backend_module is not None and hasattr(_backend_module, 'gelu'):
+        return _backend_module.gelu(x)
+    
+    # Python fallback implementation
     # Use tanh approximation for efficiency
     sqrt_2_over_pi = np.sqrt(2.0 / np.pi)
     inner = sqrt_2_over_pi * (x + 0.044715 * x * x * x)
