@@ -329,13 +329,13 @@ py::array_t<float> gelu_cpp(py::array_t<float> x) {
 
 
 // ============================================================================
-// Matrix multiplication with multi-level optimizations
+// Matrix multiplication with cache-aware tiled transposition
 // ============================================================================
-// Note: This is a simple blocked implementation with SIMD.
-// For production use, consider using BLAS (cblas_sgemm) or optimized kernels
-// like those from llamafile. The current SIMD approach uses scattered memory
-// access (_mm256_set_ps) which is not optimal for GEMM but provides moderate
-// speedup over pure scalar code.
+// Optimized implementation using:
+// - Tiled transposition of Matrix B for cache-friendly access
+// - SIMD optimization with AVX/AVX2/AVX-512
+// - FMA instructions when available
+// - OpenMP parallelization on the outermost loop
 
 py::array_t<float> matmul_cpp(py::array_t<float> a, py::array_t<float> b) {
     auto a_buf = a.request();
@@ -363,61 +363,129 @@ py::array_t<float> matmul_cpp(py::array_t<float> a, py::array_t<float> b) {
     // Initialize output to zero
     std::fill(c_ptr, c_ptr + m * n, 0.0f);
     
-    // Improved matmul with blocking and OpenMP
+    // Cache-aware tiling parameters
     const size_t block_size = 64;
     
+    // Memory safety check: ensure tile buffer doesn't exceed reasonable stack limit
+    // Each tile is block_size x block_size floats = 64*64*4 = 16KB per tile
+    const size_t tile_size = block_size * block_size;
+    const size_t max_tile_bytes = tile_size * sizeof(float);
+    const size_t max_reasonable_stack = 1024 * 1024; // 1MB
+    if (max_tile_bytes > max_reasonable_stack) {
+        throw std::runtime_error("Tile buffer size exceeds stack limit");
+    }
+    
 #ifdef USE_OPENMP
-    #pragma omp parallel for if(m > 8)
+    #pragma omp parallel if(m > 8)
 #endif
-    for (size_t i = 0; i < m; i++) {
-        for (size_t jb = 0; jb < n; jb += block_size) {
-            size_t j_end = std::min(jb + block_size, n);
-            for (size_t kb = 0; kb < k; kb += block_size) {
-                size_t k_end = std::min(kb + block_size, k);
+    {
+        // Thread-local tile buffer for transposed B, aligned for SIMD
+        alignas(32) float tile_b[tile_size];
+        
+#ifdef USE_OPENMP
+        #pragma omp for
+#endif
+        for (size_t i = 0; i < m; i++) {
+            for (size_t jb = 0; jb < n; jb += block_size) {
+                size_t j_end = std::min(jb + block_size, n);
+                size_t j_block = j_end - jb;
                 
-                // Block multiplication
-                for (size_t j = jb; j < j_end; j++) {
-                    float sum = c_ptr[i * n + j];
+                for (size_t kb = 0; kb < k; kb += block_size) {
+                    size_t k_end = std::min(kb + block_size, k);
+                    size_t k_block = k_end - kb;
                     
-#if defined(USE_AVX2_OPT) || defined(USE_AVX_OPT)
-                    // SIMD inner loop for AVX/AVX2
-                    // Note: This uses _mm256_set_ps which is not optimal for GEMM
-                    // A production implementation would use better memory access patterns
-                    __m256 sum_vec = _mm256_setzero_ps();
-                    size_t p = kb;
-                    for (; p + 8 <= k_end; p += 8) {
-                        __m256 a_vec = _mm256_loadu_ps(a_ptr + i * k + p);
-                        __m256 b_vec = _mm256_set_ps(
-                            b_ptr[(p+7) * n + j], b_ptr[(p+6) * n + j],
-                            b_ptr[(p+5) * n + j], b_ptr[(p+4) * n + j],
-                            b_ptr[(p+3) * n + j], b_ptr[(p+2) * n + j],
-                            b_ptr[(p+1) * n + j], b_ptr[p * n + j]
-                        );
+                    // Transpose block of B into local tile for cache-friendly access
+                    // tile_b[local_j * k_block + local_k] = B[kb+local_k][jb+local_j]
+                    for (size_t local_k = 0; local_k < k_block; local_k++) {
+                        for (size_t local_j = 0; local_j < j_block; local_j++) {
+                            tile_b[local_j * k_block + local_k] = b_ptr[(kb + local_k) * n + (jb + local_j)];
+                        }
+                    }
+                    
+                    // Block multiplication using transposed tile
+                    for (size_t local_j = 0; local_j < j_block; local_j++) {
+                        size_t j = jb + local_j;
+                        float sum = c_ptr[i * n + j];
+                        
+                        // Pointer to A row and transposed B column
+                        const float* a_row = a_ptr + i * k + kb;
+                        const float* b_col = tile_b + local_j * k_block;
+                        
+#if defined(USE_AVX512_OPT)
+                        // AVX-512 version (16 floats at a time)
+                        {
+                            __m512 sum_vec = _mm512_setzero_ps();
+                            size_t p = 0;
+                            for (; p + 16 <= k_block; p += 16) {
+                                __m512 a_vec = _mm512_loadu_ps(a_row + p);
+                                __m512 b_vec = _mm512_loadu_ps(b_col + p);
 #if HAS_FMA
-                        sum_vec = _mm256_fmadd_ps(a_vec, b_vec, sum_vec);
+                                sum_vec = _mm512_fmadd_ps(a_vec, b_vec, sum_vec);
 #else
-                        sum_vec = _mm256_add_ps(sum_vec, _mm256_mul_ps(a_vec, b_vec));
+                                sum_vec = _mm512_add_ps(sum_vec, _mm512_mul_ps(a_vec, b_vec));
 #endif
-                    }
-                    // Horizontal sum
-                    __m128 sum_low = _mm256_castps256_ps128(sum_vec);
-                    __m128 sum_high = _mm256_extractf128_ps(sum_vec, 1);
-                    __m128 sum128 = _mm_add_ps(sum_low, sum_high);
-                    __m128 sum64 = _mm_add_ps(sum128, _mm_movehl_ps(sum128, sum128));
-                    __m128 sum32 = _mm_add_ss(sum64, _mm_movehdup_ps(sum64));
-                    sum += _mm_cvtss_f32(sum32);
-                    // Handle remainder
-                    for (; p < k_end; p++) {
-                        sum += a_ptr[i * k + p] * b_ptr[p * n + j];
-                    }
+                            }
+                            sum += _mm512_reduce_add_ps(sum_vec);
+                            // Handle remainder
+                            for (; p < k_block; p++) {
+                                sum += a_row[p] * b_col[p];
+                            }
+                        }
+#elif defined(USE_AVX2_OPT) || defined(USE_AVX_OPT)
+                        // AVX/AVX2 version (8 floats at a time)
+                        {
+                            __m256 sum_vec = _mm256_setzero_ps();
+                            size_t p = 0;
+                            for (; p + 8 <= k_block; p += 8) {
+                                __m256 a_vec = _mm256_loadu_ps(a_row + p);
+                                __m256 b_vec = _mm256_loadu_ps(b_col + p);
+#if HAS_FMA
+                                sum_vec = _mm256_fmadd_ps(a_vec, b_vec, sum_vec);
 #else
-                    // Scalar inner loop
-                    for (size_t p = kb; p < k_end; p++) {
-                        sum += a_ptr[i * k + p] * b_ptr[p * n + j];
-                    }
+                                sum_vec = _mm256_add_ps(sum_vec, _mm256_mul_ps(a_vec, b_vec));
 #endif
-                    
-                    c_ptr[i * n + j] = sum;
+                            }
+                            // Horizontal sum
+                            __m128 sum_low = _mm256_castps256_ps128(sum_vec);
+                            __m128 sum_high = _mm256_extractf128_ps(sum_vec, 1);
+                            __m128 sum128 = _mm_add_ps(sum_low, sum_high);
+                            __m128 sum64 = _mm_add_ps(sum128, _mm_movehl_ps(sum128, sum128));
+                            __m128 sum32 = _mm_add_ss(sum64, _mm_movehdup_ps(sum64));
+                            sum += _mm_cvtss_f32(sum32);
+                            // Handle remainder
+                            for (; p < k_block; p++) {
+                                sum += a_row[p] * b_col[p];
+                            }
+                        }
+#elif defined(USE_NEON_OPT)
+                        // ARM NEON version (4 floats at a time)
+                        {
+                            float32x4_t sum_vec = vdupq_n_f32(0.0f);
+                            size_t p = 0;
+                            for (; p + 4 <= k_block; p += 4) {
+                                float32x4_t a_vec = vld1q_f32(a_row + p);
+                                float32x4_t b_vec = vld1q_f32(b_col + p);
+                                sum_vec = vmlaq_f32(sum_vec, a_vec, b_vec);  // FMA on NEON
+                            }
+                            // Horizontal sum
+                            float32x2_t sum_low = vget_low_f32(sum_vec);
+                            float32x2_t sum_high = vget_high_f32(sum_vec);
+                            float32x2_t sum_pair = vadd_f32(sum_low, sum_high);
+                            sum += vget_lane_f32(sum_pair, 0) + vget_lane_f32(sum_pair, 1);
+                            // Handle remainder
+                            for (; p < k_block; p++) {
+                                sum += a_row[p] * b_col[p];
+                            }
+                        }
+#else
+                        // Scalar version
+                        for (size_t p = 0; p < k_block; p++) {
+                            sum += a_row[p] * b_col[p];
+                        }
+#endif
+                        
+                        c_ptr[i * n + j] = sum;
+                    }
                 }
             }
         }
