@@ -377,8 +377,12 @@ class BuildCudaCommand(Command):
         # Build with nvcc - use C++14 to fix template parameter pack issues
         cmd = [
             'nvcc', '-O3', '-std=c++14', '-shared', '-Xcompiler', '-fPIC',
+            "-gencode arch=compute_35,code=sm_35",
+            '--compiler-bindir', '/usr/bin/gcc-10',
             '--compiler-options', '-I' + pybind11.get_include(),
+            '--compiler-options', '-I' + "/usr/include/python3.10",
             '-o', 'tensor_ops_cuda' + self._get_extension_suffix(),
+            "-lstdc++",
             'tensor_ops_cuda.cu'
         ]
         #print(f"[DEBUG] cmd={cmd}",flush=True,file=sys.stderr) 
@@ -425,11 +429,12 @@ class BuildOpenCLCommand(Command):
 
         cmd = [
             'g++', '-O3', '-shared', '-std=c++11', '-fPIC',
-            '-I' + pybind11.get_include(),'-I/usr/include/python3.10', '-lOpenCL',
+            '-I' + pybind11.get_include(),'-I/usr/include/python3.10', 
             '-o', 'tensor_ops_opencl' + self._get_extension_suffix(),
-            'tensor_ops_opencl.cpp'
+            'tensor_ops_opencl.cpp',
+            "-lOpenCL"
         ]
-        #print(f"[DEBUG] cmd={cmd}",flush=True,file=sys.stderr) 
+        print(f"[DEBUG] cmd={cmd}",flush=True,file=sys.stderr) 
         result = subprocess.run(cmd, cwd=os.path.dirname(__file__) or '.')
         if result.returncode == 0:
             print("✓ OpenCL backend built successfully")
