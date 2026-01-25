@@ -128,8 +128,11 @@ def print_backend_info():
         print(f"\nDetailed optimization info:")
         try:
             print(tensor_ops_cpp.get_optimization_info())
-        except:
+        except AttributeError:
+            # Older version of extension without get_optimization_info
             pass
+        except Exception as e:
+            print(f"Warning: Could not get optimization info: {e}")
 
 
 # Print info on import
