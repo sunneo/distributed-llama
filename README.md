@@ -43,6 +43,20 @@ Python 3 and C++ compiler required. The command will download the model and the 
 
 * [🤗 How to Convert Hugging Face Model](./docs/HOW_TO_CONVERT_HF_MODEL.md)
 
+### 🧪 Experimental: Distributed-AirLLM (Python Workers)
+
+This repository includes an experimental implementation combining Distributed-Llama with AirLLM concepts:
+* **Python workers** with layer-wise memory management
+* **Shared-storage zero-data movement** architecture
+* **73% network traffic reduction** through activation compression
+* **5-15x speedup** with C++ SIMD optimizations
+
+📚 **Complete Documentation**: See [mix/DEPLOYMENT_GUIDE.md](mix/DEPLOYMENT_GUIDE.md) for:
+- Deployment instructions (Chinese/English)
+- Comparison with AirLLM and Distributed-Llama
+- Performance optimization guide
+- TODO and improvement suggestions
+
 ### 🚧 Known Limitations
 
 * You can run Distributed Llama only on 1, 2, 4... 2^n nodes.
