@@ -106,6 +106,95 @@ def test_activations():
         print("    ✓ GELU matches")
 
 
+def test_matmul():
+    """Test matrix multiplication with various sizes including edge cases."""
+    print("\n=== Testing Matrix Multiplication ===")
+    
+    try:
+        import tensor_ops_cpp
+    except ImportError:
+        print("Skipping (C++ extension not available)")
+        return
+    
+    # Test case 1: Regular size (multiple of SIMD width)
+    print("\n  Test 1: Regular size (256x128 @ 128x64)")
+    a = np.random.randn(256, 128).astype(np.float32)
+    b = np.random.randn(128, 64).astype(np.float32)
+    c_cpp = tensor_ops_cpp.matmul(a, b)
+    c_np = np.matmul(a, b)
+    max_diff = np.max(np.abs(c_cpp - c_np))
+    rel_error = max_diff / (np.max(np.abs(c_np)) + 1e-8)
+    print(f"    Max difference: {max_diff:.6e}")
+    print(f"    Relative error: {rel_error:.6e}")
+    if rel_error < 1e-4:
+        print("    ✓ Results match!")
+    else:
+        print(f"    ✗ Results differ significantly")
+    
+    # Test case 2: Small size
+    print("\n  Test 2: Small size (16x32 @ 32x16)")
+    a = np.random.randn(16, 32).astype(np.float32)
+    b = np.random.randn(32, 16).astype(np.float32)
+    c_cpp = tensor_ops_cpp.matmul(a, b)
+    c_np = np.matmul(a, b)
+    max_diff = np.max(np.abs(c_cpp - c_np))
+    rel_error = max_diff / (np.max(np.abs(c_np)) + 1e-8)
+    print(f"    Max difference: {max_diff:.6e}")
+    print(f"    Relative error: {rel_error:.6e}")
+    if rel_error < 1e-4:
+        print("    ✓ Results match!")
+    
+    # Test case 3: Non-multiple of block size (edge cases)
+    print("\n  Test 3: Non-multiple of block size (127x97 @ 97x73)")
+    a = np.random.randn(127, 97).astype(np.float32)
+    b = np.random.randn(97, 73).astype(np.float32)
+    c_cpp = tensor_ops_cpp.matmul(a, b)
+    c_np = np.matmul(a, b)
+    max_diff = np.max(np.abs(c_cpp - c_np))
+    rel_error = max_diff / (np.max(np.abs(c_np)) + 1e-8)
+    print(f"    Max difference: {max_diff:.6e}")
+    print(f"    Relative error: {rel_error:.6e}")
+    if rel_error < 1e-4:
+        print("    ✓ Results match!")
+    
+    # Test case 4: Large size (close to real-world Llama dimensions)
+    print("\n  Test 4: Llama-like size (128x4096 @ 4096x11008)")
+    a = np.random.randn(128, 4096).astype(np.float32)
+    b = np.random.randn(4096, 11008).astype(np.float32)
+    c_cpp = tensor_ops_cpp.matmul(a, b)
+    c_np = np.matmul(a, b)
+    max_diff = np.max(np.abs(c_cpp - c_np))
+    rel_error = max_diff / (np.max(np.abs(c_np)) + 1e-8)
+    print(f"    Max difference: {max_diff:.6e}")
+    print(f"    Relative error: {rel_error:.6e}")
+    if rel_error < 1e-4:
+        print("    ✓ Results match!")
+    
+    # Test case 5: Single element
+    print("\n  Test 5: Edge case - single element (1x1 @ 1x1)")
+    a = np.array([[2.5]], dtype=np.float32)
+    b = np.array([[3.0]], dtype=np.float32)
+    c_cpp = tensor_ops_cpp.matmul(a, b)
+    c_np = np.matmul(a, b)
+    max_diff = np.max(np.abs(c_cpp - c_np))
+    print(f"    Max difference: {max_diff:.6e}")
+    if max_diff < 1e-6:
+        print("    ✓ Results match!")
+    
+    # Test case 6: Non-multiple of SIMD width (8)
+    print("\n  Test 6: Non-multiple of SIMD width (13x19 @ 19x23)")
+    a = np.random.randn(13, 19).astype(np.float32)
+    b = np.random.randn(19, 23).astype(np.float32)
+    c_cpp = tensor_ops_cpp.matmul(a, b)
+    c_np = np.matmul(a, b)
+    max_diff = np.max(np.abs(c_cpp - c_np))
+    rel_error = max_diff / (np.max(np.abs(c_np)) + 1e-8)
+    print(f"    Max difference: {max_diff:.6e}")
+    print(f"    Relative error: {rel_error:.6e}")
+    if rel_error < 1e-4:
+        print("    ✓ Results match!")
+
+
 def benchmark_cpp_vs_python():
     """Benchmark C++ vs Python performance."""
     print("\n=== Benchmarking C++ vs Python ===")
@@ -165,6 +254,32 @@ def benchmark_cpp_vs_python():
     print(f"  Python: {time_py*1000:.2f} ms")
     print(f"  C++:    {time_cpp*1000:.2f} ms")
     print(f"  Speedup: {speedup:.2f}x")
+    
+    # Benchmark MatMul
+    print(f"\n=== Matrix Multiplication Benchmark ===")
+    a = np.random.randn(128, 4096).astype(np.float32)
+    b = np.random.randn(4096, 11008).astype(np.float32)
+    
+    iterations_matmul = 10
+    
+    start = time.perf_counter()
+    for _ in range(iterations_matmul):
+        _ = np.matmul(a, b)
+    time_np = time.perf_counter() - start
+    
+    start = time.perf_counter()
+    for _ in range(iterations_matmul):
+        _ = tensor_ops_cpp.matmul(a, b)
+    time_cpp = time.perf_counter() - start
+    
+    speedup = time_np / time_cpp
+    
+    print(f"\nMatMul (128x4096 @ 4096x11008, {iterations_matmul} iterations):")
+    print(f"  NumPy:  {time_np*1000:.2f} ms")
+    print(f"  C++:    {time_cpp*1000:.2f} ms")
+    print(f"  Speedup: {speedup:.2f}x")
+    print(f"  Note: NumPy uses optimized BLAS libraries (e.g., OpenBLAS, MKL)")
+    print(f"        Our optimized C++ version shows cache-aware tiled transposition benefits")
 
 
 def test_hybrid_module():
@@ -183,6 +298,7 @@ if __name__ == '__main__':
     if has_cpp:
         test_rms_norm()
         test_activations()
+        test_matmul()
         benchmark_cpp_vs_python()
     
     test_hybrid_module()
