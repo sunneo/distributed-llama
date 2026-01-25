@@ -17,3 +17,10 @@ server
 /dllama-*
 *.exe
 *.spv
+
+# Python build artifacts
+build/
+*.so
+*.pyd
+*.egg-info/
+dist/
