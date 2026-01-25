@@ -364,16 +364,19 @@ py::array_t<float> matmul_cpp(py::array_t<float> a, py::array_t<float> b) {
     std::fill(c_ptr, c_ptr + m * n, 0.0f);
     
     // Cache-aware tiling parameters
-    const size_t block_size = 64;
+    // Note: block_size is effectively a compile-time constant
+    constexpr size_t block_size = 64;
+    constexpr size_t tile_size = block_size * block_size;  // 4096 floats = 16KB
     
-    // Memory safety check: ensure tile buffer doesn't exceed reasonable stack limit
-    // Each tile is block_size x block_size floats
-    const size_t tile_size = block_size * block_size;
-    const size_t max_tile_bytes = tile_size * sizeof(float);
-    const size_t max_reasonable_stack = 256 * 1024; // 256KB conservative stack limit
-    if (max_tile_bytes > max_reasonable_stack) {
-        throw std::runtime_error("Tile buffer size exceeds safe stack limit");
-    }
+    // Static assertion to ensure tile size is reasonable for stack allocation
+    static_assert(tile_size * sizeof(float) < 64 * 1024, 
+                  "Tile buffer too large for stack allocation");
+    
+    // Additional runtime check for safety on platforms with smaller stacks
+    constexpr size_t max_tile_bytes = tile_size * sizeof(float);
+    constexpr size_t max_reasonable_stack = 256 * 1024; // 256KB conservative stack limit
+    static_assert(max_tile_bytes < max_reasonable_stack,
+                  "Tile buffer size exceeds safe stack limit");
     
 #ifdef USE_OPENMP
     #pragma omp parallel if(m > 8)
