@@ -367,12 +367,12 @@ py::array_t<float> matmul_cpp(py::array_t<float> a, py::array_t<float> b) {
     const size_t block_size = 64;
     
     // Memory safety check: ensure tile buffer doesn't exceed reasonable stack limit
-    // Each tile is block_size x block_size floats = 64*64*4 = 16KB per tile
+    // Each tile is block_size x block_size floats
     const size_t tile_size = block_size * block_size;
     const size_t max_tile_bytes = tile_size * sizeof(float);
-    const size_t max_reasonable_stack = 1024 * 1024; // 1MB
+    const size_t max_reasonable_stack = 256 * 1024; // 256KB conservative stack limit
     if (max_tile_bytes > max_reasonable_stack) {
-        throw std::runtime_error("Tile buffer size exceeds stack limit");
+        throw std::runtime_error("Tile buffer size exceeds safe stack limit");
     }
     
 #ifdef USE_OPENMP
@@ -380,7 +380,12 @@ py::array_t<float> matmul_cpp(py::array_t<float> a, py::array_t<float> b) {
 #endif
     {
         // Thread-local tile buffer for transposed B, aligned for SIMD
+        // Use 64-byte alignment for AVX-512, 32-byte for AVX/AVX2
+#if defined(USE_AVX512_OPT)
+        alignas(64) float tile_b[tile_size];
+#else
         alignas(32) float tile_b[tile_size];
+#endif
         
 #ifdef USE_OPENMP
         #pragma omp for
