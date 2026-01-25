@@ -2,6 +2,10 @@
 
 This directory contains the merged implementation of **Distributed-Llama** and **AirLLM** concepts, creating a system for running large language models (30B+) on distributed consumer hardware.
 
+> 📖 **New to this project?** Start with [QUICK_REFERENCE.md](QUICK_REFERENCE.md) for a quick overview and FAQ.
+
+> 🚀 **Want to deploy?** See [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) for complete deployment instructions.
+
 ## Directory Structure
 
 ```
