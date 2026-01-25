@@ -377,11 +377,11 @@ class BuildCudaCommand(Command):
         # Build with nvcc
         cmd = [
             'nvcc', '-O3', '-shared', '-Xcompiler', '-fPIC',
-            '--compiler-options', '-I' + pybind11.get_include(),
+            '--compiler-options', '-I' + pybind11.get_include(), '-I/usr/include/python3.10',
             '-o', 'tensor_ops_cuda' + self._get_extension_suffix(),
             'tensor_ops_cuda.cu'
         ]
-        
+        #print(f"[DEBUG] cmd={cmd}",flush=True,file=sys.stderr) 
         result = subprocess.run(cmd, cwd=os.path.dirname(__file__) or '.')
         if result.returncode == 0:
             print("✓ CUDA backend built successfully")
@@ -403,7 +403,10 @@ class BuildOpenCLCommand(Command):
     
     def finalize_options(self):
         pass
-    
+    def _get_extension_suffix(self):
+        import sysconfig
+        return sysconfig.get_config_var('EXT_SUFFIX') or '.so'
+   
     def run(self):
         detector = CapabilityDetector()
         if not detector.detect_opencl():
@@ -419,6 +422,19 @@ class BuildOpenCLCommand(Command):
         print("      -lOpenCL \\")
         print("      -o tensor_ops_opencl$(python3-config --extension-suffix) \\")
         print("      tensor_ops_opencl.cpp")
+
+        cmd = [
+            'g++', '-O3', '-shared', '-std=c++11', '-fPIC',
+            '-I' + pybind11.get_include(),'-I/usr/include/python3.10', '-lOpenCL',
+            '-o', 'tensor_ops_opencl' + self._get_extension_suffix(),
+            'tensor_ops_opencl.cpp'
+        ]
+        #print(f"[DEBUG] cmd={cmd}",flush=True,file=sys.stderr) 
+        result = subprocess.run(cmd, cwd=os.path.dirname(__file__) or '.')
+        if result.returncode == 0:
+            print("✓ OpenCL backend built successfully")
+        else:
+            print("✗ OpenCL backend build failed")
 
 
 class CustomBuildExt(build_ext):
