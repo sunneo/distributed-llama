@@ -376,6 +376,8 @@ py::array_t<float> matmul_cpp(py::array_t<float> a, py::array_t<float> b) {
                     
 #if defined(USE_AVX2_OPT) || defined(USE_AVX_OPT)
                     // SIMD inner loop for AVX/AVX2
+                    // Note: This uses _mm256_set_ps which is not optimal for GEMM
+                    // A production implementation would use better memory access patterns
                     __m256 sum_vec = _mm256_setzero_ps();
                     size_t p = kb;
                     for (; p + 8 <= k_end; p += 8) {
@@ -430,7 +432,7 @@ std::string get_optimization_info() {
     info += "  OpenMP: ";
 #if HAS_OPENMP
     info += "Enabled";
-#ifdef USE_OPENMP
+#if HAS_OPENMP
     info += " (max threads: " + std::to_string(omp_get_max_threads()) + ")";
 #endif
 #else

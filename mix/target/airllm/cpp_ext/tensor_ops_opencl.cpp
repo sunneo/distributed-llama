@@ -76,18 +76,43 @@ public:
     cl_context context;
     cl_command_queue queue;
     cl_device_id device;
+    bool initialized;
     
-    OpenCLContext() {
+    OpenCLContext() : context(nullptr), queue(nullptr), device(nullptr), initialized(false) {
+        cl_int err;
         cl_platform_id platform;
-        clGetPlatformIDs(1, &platform, NULL);
-        clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 1, &device, NULL);
-        context = clCreateContext(NULL, 1, &device, NULL, NULL, NULL);
-        queue = clCreateCommandQueue(context, device, 0, NULL);
+        
+        err = clGetPlatformIDs(1, &platform, NULL);
+        if (err != CL_SUCCESS) {
+            throw std::runtime_error("Failed to get OpenCL platform");
+        }
+        
+        err = clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 1, &device, NULL);
+        if (err != CL_SUCCESS) {
+            // Try CPU device as fallback
+            err = clGetDeviceIDs(platform, CL_DEVICE_TYPE_CPU, 1, &device, NULL);
+            if (err != CL_SUCCESS) {
+                throw std::runtime_error("Failed to get OpenCL device");
+            }
+        }
+        
+        context = clCreateContext(NULL, 1, &device, NULL, NULL, &err);
+        if (err != CL_SUCCESS) {
+            throw std::runtime_error("Failed to create OpenCL context");
+        }
+        
+        queue = clCreateCommandQueue(context, device, 0, &err);
+        if (err != CL_SUCCESS) {
+            clReleaseContext(context);
+            throw std::runtime_error("Failed to create OpenCL command queue");
+        }
+        
+        initialized = true;
     }
     
     ~OpenCLContext() {
-        clReleaseCommandQueue(queue);
-        clReleaseContext(context);
+        if (queue) clReleaseCommandQueue(queue);
+        if (context) clReleaseContext(context);
     }
     
     cl_program build_program(const char* source) {
@@ -102,6 +127,7 @@ public:
             clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, 0, NULL, &log_size);
             std::vector<char> log(log_size);
             clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, log_size, log.data(), NULL);
+            clReleaseProgram(program);
             throw std::runtime_error("Build failed: " + std::string(log.data()));
         }
         
@@ -113,7 +139,11 @@ static OpenCLContext* g_context = nullptr;
 
 void init_opencl() {
     if (!g_context) {
-        g_context = new OpenCLContext();
+        try {
+            g_context = new OpenCLContext();
+        } catch (const std::exception& e) {
+            throw std::runtime_error("OpenCL initialization failed: " + std::string(e.what()));
+        }
     }
 }
 
@@ -134,14 +164,40 @@ py::array_t<float> rms_norm_opencl(py::array_t<float> x, py::array_t<float> weig
     float* w_ptr = static_cast<float*>(w_buf.ptr);
     float* out_ptr = static_cast<float*>(result_buf.ptr);
     
+    cl_int err;
+    
     // Build program
     cl_program program = g_context->build_program(rms_norm_kernel_src);
-    cl_kernel kernel = clCreateKernel(program, "rms_norm", NULL);
+    cl_kernel kernel = clCreateKernel(program, "rms_norm", &err);
+    if (err != CL_SUCCESS) {
+        clReleaseProgram(program);
+        throw std::runtime_error("Failed to create kernel");
+    }
     
     // Create buffers
-    cl_mem d_x = clCreateBuffer(g_context->context, CL_MEM_READ_ONLY, total_size * sizeof(float), NULL, NULL);
-    cl_mem d_w = clCreateBuffer(g_context->context, CL_MEM_READ_ONLY, dim * sizeof(float), NULL, NULL);
-    cl_mem d_out = clCreateBuffer(g_context->context, CL_MEM_WRITE_ONLY, total_size * sizeof(float), NULL, NULL);
+    cl_mem d_x = clCreateBuffer(g_context->context, CL_MEM_READ_ONLY, total_size * sizeof(float), NULL, &err);
+    if (err != CL_SUCCESS) {
+        clReleaseKernel(kernel);
+        clReleaseProgram(program);
+        throw std::runtime_error("Failed to create buffer for x");
+    }
+    
+    cl_mem d_w = clCreateBuffer(g_context->context, CL_MEM_READ_ONLY, dim * sizeof(float), NULL, &err);
+    if (err != CL_SUCCESS) {
+        clReleaseMemObject(d_x);
+        clReleaseKernel(kernel);
+        clReleaseProgram(program);
+        throw std::runtime_error("Failed to create buffer for weight");
+    }
+    
+    cl_mem d_out = clCreateBuffer(g_context->context, CL_MEM_WRITE_ONLY, total_size * sizeof(float), NULL, &err);
+    if (err != CL_SUCCESS) {
+        clReleaseMemObject(d_x);
+        clReleaseMemObject(d_w);
+        clReleaseKernel(kernel);
+        clReleaseProgram(program);
+        throw std::runtime_error("Failed to create buffer for output");
+    }
     
     // Copy data to device
     clEnqueueWriteBuffer(g_context->queue, d_x, CL_TRUE, 0, total_size * sizeof(float), x_ptr, 0, NULL, NULL);
@@ -157,7 +213,15 @@ py::array_t<float> rms_norm_opencl(py::array_t<float> x, py::array_t<float> weig
     
     // Execute kernel
     size_t global_size = n_rows;
-    clEnqueueNDRangeKernel(g_context->queue, kernel, 1, NULL, &global_size, NULL, 0, NULL, NULL);
+    err = clEnqueueNDRangeKernel(g_context->queue, kernel, 1, NULL, &global_size, NULL, 0, NULL, NULL);
+    if (err != CL_SUCCESS) {
+        clReleaseMemObject(d_x);
+        clReleaseMemObject(d_w);
+        clReleaseMemObject(d_out);
+        clReleaseKernel(kernel);
+        clReleaseProgram(program);
+        throw std::runtime_error("Failed to execute kernel");
+    }
     
     // Read back results
     clEnqueueReadBuffer(g_context->queue, d_out, CL_TRUE, 0, total_size * sizeof(float), out_ptr, 0, NULL, NULL);

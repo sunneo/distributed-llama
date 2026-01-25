@@ -63,7 +63,15 @@ class CapabilityDetector:
         return flags
     
     def _test_compile_and_run(self, code, flags):
-        """Test if code compiles and runs successfully."""
+        """
+        Test if code compiles and runs successfully.
+        
+        Note: This runs compiled test programs to verify runtime CPU support.
+        The test programs are simple (just initialize SIMD registers) and
+        execute in an isolated temporary directory. This is necessary to
+        distinguish between compile-time support (compiler can generate code)
+        and runtime support (CPU can execute the instructions).
+        """
         if not self.compiler:
             return False
             

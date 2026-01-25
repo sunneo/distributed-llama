@@ -80,9 +80,25 @@ py::array_t<float> rms_norm_cuda(py::array_t<float> x, py::array_t<float> weight
     
     // Allocate device memory
     float *d_x, *d_w, *d_out;
-    cudaMalloc(&d_x, total_size * sizeof(float));
-    cudaMalloc(&d_w, dim * sizeof(float));
-    cudaMalloc(&d_out, total_size * sizeof(float));
+    cudaError_t err;
+    
+    err = cudaMalloc(&d_x, total_size * sizeof(float));
+    if (err != cudaSuccess) {
+        throw std::runtime_error("CUDA malloc failed for x: " + std::string(cudaGetErrorString(err)));
+    }
+    
+    err = cudaMalloc(&d_w, dim * sizeof(float));
+    if (err != cudaSuccess) {
+        cudaFree(d_x);
+        throw std::runtime_error("CUDA malloc failed for weight: " + std::string(cudaGetErrorString(err)));
+    }
+    
+    err = cudaMalloc(&d_out, total_size * sizeof(float));
+    if (err != cudaSuccess) {
+        cudaFree(d_x);
+        cudaFree(d_w);
+        throw std::runtime_error("CUDA malloc failed for output: " + std::string(cudaGetErrorString(err)));
+    }
     
     // Copy to device
     cudaMemcpy(d_x, x_ptr, total_size * sizeof(float), cudaMemcpyHostToDevice);
@@ -92,6 +108,15 @@ py::array_t<float> rms_norm_cuda(py::array_t<float> x, py::array_t<float> weight
     int threads = 256;
     int blocks = (n_rows + threads - 1) / threads;
     rms_norm_kernel<<<blocks, threads>>>(d_x, d_w, d_out, dim, n_rows, eps);
+    
+    // Check for kernel errors
+    err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        cudaFree(d_x);
+        cudaFree(d_w);
+        cudaFree(d_out);
+        throw std::runtime_error("CUDA kernel failed: " + std::string(cudaGetErrorString(err)));
+    }
     
     // Copy back to host
     cudaMemcpy(out_ptr, d_out, total_size * sizeof(float), cudaMemcpyDeviceToHost);
