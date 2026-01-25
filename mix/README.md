@@ -189,13 +189,30 @@ cd mix/target/airllm
 python examples/parse_header.py /path/to/model.m
 ```
 
+## Documentation
+
+### 📚 Complete Documentation Suite
+
+- **[部署手冊 (Deployment Guide)](DEPLOYMENT_GUIDE.md)** - Complete deployment guide with step-by-step instructions (Chinese/English)
+- **[比較和優勢 (Comparison & Advantages)](COMPARISON_AND_ADVANTAGES.md)** - Detailed comparison with AirLLM, Distributed-Llama, and other solutions
+- **[TODO 和改進建議 (TODO & Improvements)](TODO_AND_IMPROVEMENTS.md)** - Comprehensive TODO list and improvement suggestions
+- **[Implementation Summary](IMPLEMENTATION_SUMMARY.md)** - Technical implementation details
+- **[Phase 3 & 4 Summary](PHASE3_4_SUMMARY.md)** - Zero-data movement and C++ optimization details
+- **[Development Plan](PLAN.md)** - Detailed task tracking and roadmap
+
+### 🚀 Quick Links
+
+- **How to deploy?** → See [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)
+- **What are the advantages?** → See [COMPARISON_AND_ADVANTAGES.md](COMPARISON_AND_ADVANTAGES.md)
+- **What needs improvement?** → See [TODO_AND_IMPROVEMENTS.md](TODO_AND_IMPROVEMENTS.md)
+
 ## Development Roadmap
 
 See [`PLAN.md`](PLAN.md) for detailed task tracking.
 
-**Current Phase:** 2 - AirLLM Integration (60% complete)
+**Current Status:** 82% complete (Phases 1-4 implemented)
 
-**Next Milestone:** Implement tensor operations to enable actual inference
+**Next Milestone:** End-to-end testing with C++ root node
 
 ## Technical Details
 
