@@ -330,6 +330,87 @@ class TestCapabilitiesCommand(Command):
         print("="*60)
         print("\nTo build with detected optimizations:")
         print("  python setup.py build_ext --inplace")
+        
+        if capabilities['cuda']:
+            print("\nOptional CUDA backend detected:")
+            print("  To build CUDA backend (experimental):")
+            print("    python setup.py build_cuda")
+        
+        if capabilities['opencl']:
+            print("\nOptional OpenCL backend detected:")
+            print("  To build OpenCL backend (experimental):")
+            print("    python setup.py build_opencl")
+        
+        if capabilities['vulkan']:
+            print("\nOptional Vulkan backend detected:")
+            print("  To build Vulkan backend (experimental):")
+            print("    python setup.py build_vulkan")
+
+
+class BuildCudaCommand(Command):
+    """Build CUDA backend extension."""
+    description = 'Build CUDA backend (requires CUDA toolkit)'
+    user_options = []
+    
+    def initialize_options(self):
+        pass
+    
+    def finalize_options(self):
+        pass
+    
+    def run(self):
+        detector = CapabilityDetector()
+        if not detector.detect_cuda():
+            print("ERROR: CUDA not available on this system")
+            print("Please install CUDA toolkit from https://developer.nvidia.com/cuda-downloads")
+            return
+        
+        print("Building CUDA backend...")
+        # Build with nvcc
+        cmd = [
+            'nvcc', '-O3', '-shared', '-Xcompiler', '-fPIC',
+            '--compiler-options', '-I' + pybind11.get_include(),
+            '-o', 'tensor_ops_cuda' + self._get_extension_suffix(),
+            'tensor_ops_cuda.cu'
+        ]
+        
+        result = subprocess.run(cmd, cwd=os.path.dirname(__file__) or '.')
+        if result.returncode == 0:
+            print("✓ CUDA backend built successfully")
+        else:
+            print("✗ CUDA backend build failed")
+    
+    def _get_extension_suffix(self):
+        import sysconfig
+        return sysconfig.get_config_var('EXT_SUFFIX') or '.so'
+
+
+class BuildOpenCLCommand(Command):
+    """Build OpenCL backend extension."""
+    description = 'Build OpenCL backend (requires OpenCL)'
+    user_options = []
+    
+    def initialize_options(self):
+        pass
+    
+    def finalize_options(self):
+        pass
+    
+    def run(self):
+        detector = CapabilityDetector()
+        if not detector.detect_opencl():
+            print("ERROR: OpenCL not available on this system")
+            print("Please install OpenCL drivers for your GPU")
+            return
+        
+        print("Building OpenCL backend...")
+        print("Note: OpenCL backend is experimental and requires manual build")
+        print("\nBuild command:")
+        print("  g++ -O3 -shared -std=c++11 -fPIC \\")
+        print("      $(python3 -m pybind11 --includes) \\")
+        print("      -lOpenCL \\")
+        print("      -o tensor_ops_opencl$(python3-config --extension-suffix) \\")
+        print("      tensor_ops_opencl.cpp")
 
 
 class CustomBuildExt(build_ext):
@@ -398,6 +479,8 @@ setup(
     cmdclass={
         'build_ext': CustomBuildExt,
         'test_capabilities': TestCapabilitiesCommand,
+        'build_cuda': BuildCudaCommand,
+        'build_opencl': BuildOpenCLCommand,
     },
     zip_safe=False,
 )

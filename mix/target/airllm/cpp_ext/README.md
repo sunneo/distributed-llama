@@ -374,19 +374,146 @@ engine = LayerWiseInferenceEngine(model_path)
 
 The capability detection system is ready to support additional backends:
 
-### Planned GPU Backends
+### GPU Backends (Experimental)
 
-1. **CUDA**: NVIDIA GPU acceleration
-   - Status: Detection implemented, kernels not yet implemented
-   - Requires: NVIDIA GPU, CUDA toolkit, nvcc compiler
+GPU backend implementations are provided but require specific hardware and drivers:
 
-2. **OpenCL**: Cross-platform GPU acceleration
-   - Status: Detection implemented, kernels not yet implemented
-   - Requires: OpenCL runtime, GPU drivers
+#### 1. CUDA Backend (NVIDIA GPUs)
 
-3. **Vulkan**: Modern GPU API for compute
-   - Status: Detection implemented, kernels not yet implemented
-   - Requires: Vulkan SDK, compatible GPU
+**Status**: Source code provided (`tensor_ops_cuda.cu`)  
+**Requirements**: 
+- NVIDIA GPU with CUDA support
+- CUDA Toolkit (nvcc compiler)
+- cuDNN (optional, for additional optimizations)
+
+**Detection**:
+```bash
+python setup.py test_capabilities
+```
+
+**Build** (when CUDA is available):
+```bash
+python setup.py build_cuda
+```
+
+Or manually:
+```bash
+nvcc -O3 -shared -Xcompiler -fPIC \
+    $(python3 -m pybind11 --includes) \
+    -o tensor_ops_cuda$(python3-config --extension-suffix) \
+    tensor_ops_cuda.cu
+```
+
+**Usage**:
+```python
+import tensor_ops_cuda
+print(tensor_ops_cuda.get_cuda_info())
+result = tensor_ops_cuda.rms_norm(x, weight)
+```
+
+#### 2. OpenCL Backend (Cross-Platform GPU)
+
+**Status**: Source code provided (`tensor_ops_opencl.cpp`)  
+**Requirements**:
+- OpenCL-compatible GPU (NVIDIA, AMD, Intel)
+- OpenCL runtime and drivers
+- OpenCL headers
+
+**Detection**:
+```bash
+python setup.py test_capabilities
+```
+
+**Build** (when OpenCL is available):
+```bash
+python setup.py build_opencl
+```
+
+Or manually:
+```bash
+g++ -O3 -shared -std=c++11 -fPIC \
+    $(python3 -m pybind11 --includes) \
+    -lOpenCL \
+    -o tensor_ops_opencl$(python3-config --extension-suffix) \
+    tensor_ops_opencl.cpp
+```
+
+**Usage**:
+```python
+import tensor_ops_opencl
+print(tensor_ops_opencl.get_opencl_info())
+result = tensor_ops_opencl.rms_norm(x, weight)
+```
+
+#### 3. Vulkan Backend (Modern GPU API)
+
+**Status**: Planned (detection implemented)  
+**Requirements**:
+- Vulkan-compatible GPU
+- Vulkan SDK
+- Compute shader support
+
+**Note**: Vulkan backend implementation is planned but not yet available. The main distributed-llama project already has Vulkan support in the C++ codebase (see `src/nn/nn-vulkan.cpp`).
+
+### Choosing the Right Backend
+
+**For CPU-only systems**:
+- Use the default CPU backend (automatically optimized)
+- Best for: Development, small models, systems without GPU
+
+**For NVIDIA GPUs**:
+- Use CUDA backend for best performance
+- Best for: Large models, production inference on NVIDIA hardware
+
+**For AMD/Intel GPUs**:
+- Use OpenCL backend for cross-platform GPU support
+- Best for: Non-NVIDIA GPUs, portable code
+
+**For maximum portability**:
+- Use CPU backend - works everywhere with automatic optimization
+- Good performance on modern CPUs with AVX2+OpenMP
+
+### Automated Backend Selection
+
+You can create a wrapper that automatically selects the best available backend:
+
+```python
+def get_best_backend():
+    """Auto-select best available backend."""
+    backends = []
+    
+    # Try CUDA first (fastest for NVIDIA)
+    try:
+        import tensor_ops_cuda
+        backends.append(('CUDA', tensor_ops_cuda))
+    except ImportError:
+        pass
+    
+    # Try OpenCL (good for AMD/Intel GPUs)
+    try:
+        import tensor_ops_opencl
+        backends.append(('OpenCL', tensor_ops_opencl))
+    except ImportError:
+        pass
+    
+    # Fall back to CPU (always available)
+    try:
+        import tensor_ops_cpp
+        backends.append(('CPU', tensor_ops_cpp))
+    except ImportError:
+        pass
+    
+    if backends:
+        name, backend = backends[0]
+        print(f"Using {name} backend")
+        return backend
+    else:
+        raise ImportError("No tensor ops backend available")
+
+# Use in your code
+tensor_ops = get_best_backend()
+result = tensor_ops.rms_norm(x, weight)
+```
 
 ### Future CPU Optimizations
 
