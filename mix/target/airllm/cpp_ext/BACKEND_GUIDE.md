@@ -37,6 +37,24 @@ y_silu = tensor_ops.silu(x)
 y_gelu = tensor_ops.gelu(x)
 ```
 
+### Configurable Backend Selection
+
+You can configure which backend to use via `backend.json` or setup.py:
+
+```bash
+# View current configuration
+cd mix/target/airllm/cpp_ext
+python setup.py configure_backend --show
+
+# Set preferred backend
+python setup.py configure_backend --backend=cpp
+
+# Set backend priority
+python setup.py configure_backend --priority="cpp,cuda,opencl,python"
+```
+
+**See `BACKEND_CONFIG.md` for detailed configuration options.**
+
 ## Building Backends
 
 ### 1. Detect Available Capabilities

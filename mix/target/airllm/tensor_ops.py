@@ -15,6 +15,7 @@ Automatically detects and uses accelerated backends (CUDA, OpenCL, C++) when ava
 import numpy as np
 from typing import Tuple, Optional
 import os
+import json
 
 # Try to import model_header, but make it optional for standalone usage
 try:
@@ -30,6 +31,41 @@ except ImportError:
 # Backend detection
 _backend = None
 _backend_module = None
+_backend_config = None
+
+def _load_backend_config():
+    """Load backend configuration from JSON file."""
+    global _backend_config
+    
+    if _backend_config is not None:
+        return _backend_config
+    
+    # Try to find backend.json in common locations
+    config_paths = [
+        # In cpp_ext directory (where backend.json is stored)
+        os.path.join(os.path.dirname(__file__), 'cpp_ext', 'backend.json'),
+        # In parent directory
+        os.path.join(os.path.dirname(__file__), '..', 'cpp_ext', 'backend.json'),
+        # Absolute path for when imported from different locations
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cpp_ext', 'backend.json'),
+    ]
+    
+    for config_path in config_paths:
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, 'r') as f:
+                    _backend_config = json.load(f)
+                    return _backend_config
+            except (json.JSONDecodeError, IOError):
+                pass
+    
+    # Default configuration if file not found
+    _backend_config = {
+        'preferred_backend': 'auto',
+        'backend_priority': ['cuda', 'opencl', 'cpp', 'python'],
+        'force_backend': None
+    }
+    return _backend_config
 
 def _try_import_backend(module_name):
     """Try to import a backend module, returning the module if successful, None otherwise."""
@@ -39,32 +75,60 @@ def _try_import_backend(module_name):
         return None
 
 def _detect_backend():
-    """Detect and initialize the best available backend."""
+    """Detect and initialize the best available backend based on configuration."""
     global _backend, _backend_module
     
     if _backend is not None:
         return _backend
     
-    # Try CUDA backend first (highest performance for NVIDIA GPUs)
-    module = _try_import_backend('tensor_ops_cuda')
-    if module is not None:
-        _backend = 'cuda'
-        _backend_module = module
-        return _backend
+    # Load configuration
+    config = _load_backend_config()
     
-    # Try OpenCL backend (works on many GPUs)
-    module = _try_import_backend('tensor_ops_opencl')
-    if module is not None:
-        _backend = 'opencl'
-        _backend_module = module
-        return _backend
+    # Check if a specific backend is forced
+    force_backend = config.get('force_backend')
+    if force_backend and force_backend != 'auto':
+        module_name = f'tensor_ops_{force_backend}' if force_backend != 'python' else None
+        if module_name:
+            module = _try_import_backend(module_name)
+            if module is not None:
+                _backend = force_backend
+                _backend_module = module
+                return _backend
+            # If forced backend not available, fall through to auto-detection
+        else:
+            # Forced to use Python
+            _backend = 'python'
+            _backend_module = None
+            return _backend
     
-    # Try C++ backend (CPU optimizations)
-    module = _try_import_backend('tensor_ops_cpp')
-    if module is not None:
-        _backend = 'cpp'
-        _backend_module = module
-        return _backend
+    # Check preferred backend
+    preferred = config.get('preferred_backend', 'auto')
+    if preferred != 'auto':
+        module_name = f'tensor_ops_{preferred}' if preferred != 'python' else None
+        if module_name:
+            module = _try_import_backend(module_name)
+            if module is not None:
+                _backend = preferred
+                _backend_module = module
+                return _backend
+        elif preferred == 'python':
+            _backend = 'python'
+            _backend_module = None
+            return _backend
+    
+    # Auto-detection based on priority
+    priority = config.get('backend_priority', ['cuda', 'opencl', 'cpp', 'python'])
+    for backend_name in priority:
+        if backend_name == 'python':
+            # Python is always available as fallback
+            continue
+        
+        module_name = f'tensor_ops_{backend_name}'
+        module = _try_import_backend(module_name)
+        if module is not None:
+            _backend = backend_name
+            _backend_module = module
+            return _backend
     
     # Fall back to pure Python
     _backend = 'python'
@@ -92,7 +156,8 @@ def get_backend_info():
         
     info = {
         'backend': _backend,
-        'available_backends': []
+        'available_backends': [],
+        'config': _load_backend_config()
     }
     
     # Check all available backends using helper function
