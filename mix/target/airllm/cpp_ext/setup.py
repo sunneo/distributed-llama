@@ -377,7 +377,8 @@ class BuildCudaCommand(Command):
         # Build with nvcc - use C++14 to fix template parameter pack issues
         cmd = [
             'nvcc', '-O3', '-std=c++14', '-shared', '-Xcompiler', '-fPIC',
-            "-gencode arch=compute_35,code=sm_35",
+            "-gencode",'arch=compute_35,code=sm_35',
+            '-gencode','arch=compute_35,code=compute_35',
             '--compiler-bindir', '/usr/bin/gcc-10',
             '--compiler-options', '-I' + pybind11.get_include(),
             '--compiler-options', '-I' + "/usr/include/python3.10",
