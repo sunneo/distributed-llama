@@ -45,9 +45,11 @@ def test_rms_norm():
         print("Skipping (C++ extension not available)")
         return
     
-    # Import Python version for comparison
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-    from airllm import tensor_ops
+    # Import Python version for comparison - import tensor_ops module directly
+    # Add the parent directory (airllm) to path to import tensor_ops module
+    airllm_dir = os.path.join(os.path.dirname(__file__), '..')
+    sys.path.insert(0, airllm_dir)
+    import tensor_ops
     
     # Test data
     x = np.random.randn(4, 4096).astype(np.float32)
@@ -80,9 +82,11 @@ def test_activations():
         print("Skipping (C++ extension not available)")
         return
     
-    # Import Python version for comparison
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-    from airllm import tensor_ops
+    # Import Python version for comparison - import tensor_ops module directly
+    # Add the parent directory (airllm) to path to import tensor_ops module
+    airllm_dir = os.path.join(os.path.dirname(__file__), '..')
+    sys.path.insert(0, airllm_dir)
+    import tensor_ops
     
     # Test data
     x = np.random.randn(128, 1024).astype(np.float32)
@@ -116,9 +120,11 @@ def benchmark_cpp_vs_python():
     
     import time
     
-    # Import Python version
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-    from airllm import tensor_ops
+    # Import Python version - import tensor_ops module directly
+    # Add the parent directory (airllm) to path to import tensor_ops module
+    airllm_dir = os.path.join(os.path.dirname(__file__), '..')
+    sys.path.insert(0, airllm_dir)
+    import tensor_ops
     
     # Test data
     x = np.random.randn(128, 4096).astype(np.float32)

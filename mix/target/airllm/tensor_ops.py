@@ -14,8 +14,18 @@ Automatically detects and uses accelerated backends (CUDA, OpenCL, C++) when ava
 
 import numpy as np
 from typing import Tuple, Optional
-from .model_header import ModelHeader, RopeType
 import os
+
+# Try to import model_header, but make it optional for standalone usage
+try:
+    from .model_header import ModelHeader, RopeType
+except ImportError:
+    try:
+        from model_header import ModelHeader, RopeType
+    except ImportError:
+        # Define minimal types for standalone usage
+        ModelHeader = None
+        RopeType = None
 
 # Backend detection
 _backend = None
