@@ -31,6 +31,13 @@ except ImportError:
 _backend = None
 _backend_module = None
 
+def _try_import_backend(module_name):
+    """Try to import a backend module, returning the module if successful, None otherwise."""
+    try:
+        return __import__(module_name)
+    except (ImportError, ModuleNotFoundError):
+        return None
+
 def _detect_backend():
     """Detect and initialize the best available backend."""
     global _backend, _backend_module
@@ -39,60 +46,49 @@ def _detect_backend():
         return _backend
     
     # Try CUDA backend first (highest performance for NVIDIA GPUs)
-    try:
-        import tensor_ops_cuda
+    module = _try_import_backend('tensor_ops_cuda')
+    if module is not None:
         _backend = 'cuda'
-        _backend_module = tensor_ops_cuda
+        _backend_module = module
         return _backend
-    except (ImportError, ModuleNotFoundError):
-        pass
     
     # Try OpenCL backend (works on many GPUs)
-    try:
-        import tensor_ops_opencl
+    module = _try_import_backend('tensor_ops_opencl')
+    if module is not None:
         _backend = 'opencl'
-        _backend_module = tensor_ops_opencl
+        _backend_module = module
         return _backend
-    except (ImportError, ModuleNotFoundError):
-        pass
     
     # Try C++ backend (CPU optimizations)
-    try:
-        import tensor_ops_cpp
+    module = _try_import_backend('tensor_ops_cpp')
+    if module is not None:
         _backend = 'cpp'
-        _backend_module = tensor_ops_cpp
+        _backend_module = module
         return _backend
-    except (ImportError, ModuleNotFoundError):
-        pass
     
     # Fall back to pure Python
     _backend = 'python'
     _backend_module = None
     return _backend
 
-def _try_import_backend(module_name):
-    """Try to import a backend module, returning True if successful."""
-    try:
-        __import__(module_name)
-        return True
-    except (ImportError, ModuleNotFoundError):
-        return False
+def _ensure_backend():
+    """Ensure backend is initialized (lazy initialization helper)."""
+    if _backend is None:
+        _detect_backend()
 
 # Use lazy initialization - detect backend on first use, not at module import
-# _detect_backend() will be called when needed
+# _ensure_backend() will be called when needed
 
 def get_backend():
     """Get the currently active backend name."""
     # Lazy initialization - detect on first use
-    if _backend is None:
-        _detect_backend()
+    _ensure_backend()
     return _backend
 
 def get_backend_info():
     """Get information about the active backend."""
     # Lazy initialization - detect on first use
-    if _backend is None:
-        _detect_backend()
+    _ensure_backend()
         
     info = {
         'backend': _backend,
@@ -100,13 +96,13 @@ def get_backend_info():
     }
     
     # Check all available backends using helper function
-    if _try_import_backend('tensor_ops_cuda'):
+    if _try_import_backend('tensor_ops_cuda') is not None:
         info['available_backends'].append('cuda')
     
-    if _try_import_backend('tensor_ops_opencl'):
+    if _try_import_backend('tensor_ops_opencl') is not None:
         info['available_backends'].append('opencl')
     
-    if _try_import_backend('tensor_ops_cpp'):
+    if _try_import_backend('tensor_ops_cpp') is not None:
         info['available_backends'].append('cpp')
     
     info['available_backends'].append('python')
@@ -139,8 +135,7 @@ def rms_norm(x: np.ndarray, weight: np.ndarray, eps: float = 1e-6) -> np.ndarray
         Normalized tensor of same shape as input
     """
     # Lazy initialization of backend
-    if _backend is None:
-        _detect_backend()
+    _ensure_backend()
     
     # Use accelerated backend if available
     if _backend_module is not None and hasattr(_backend_module, 'rms_norm'):
@@ -438,8 +433,7 @@ def silu(x: np.ndarray) -> np.ndarray:
         Activated tensor of same shape
     """
     # Lazy initialization of backend
-    if _backend is None:
-        _detect_backend()
+    _ensure_backend()
     
     # Use accelerated backend if available
     if _backend_module is not None and hasattr(_backend_module, 'silu'):
@@ -462,8 +456,7 @@ def gelu(x: np.ndarray) -> np.ndarray:
         Activated tensor of same shape
     """
     # Lazy initialization of backend
-    if _backend is None:
-        _detect_backend()
+    _ensure_backend()
     
     # Use accelerated backend if available
     if _backend_module is not None and hasattr(_backend_module, 'gelu'):
