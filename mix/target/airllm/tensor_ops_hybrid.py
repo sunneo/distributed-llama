@@ -83,7 +83,7 @@ def get_backend_info() -> dict:
     Returns:
         Dictionary with backend information
     """
-    return {
+    info = {
         'has_cpp_ext': HAS_CPP_EXT,
         'has_simd': HAS_SIMD,
         'rms_norm': 'C++' if HAS_CPP_EXT else 'Python',
@@ -92,6 +92,17 @@ def get_backend_info() -> dict:
         'matmul': 'NumPy (BLAS)',
         'other_ops': 'Python'
     }
+    
+    # Add detailed optimization info if C++ extension is available
+    if HAS_CPP_EXT:
+        info['simd_level'] = getattr(tensor_ops_cpp, 'simd_level', 'Unknown')
+        info['has_openmp'] = getattr(tensor_ops_cpp, 'has_openmp', False)
+        info['has_fma'] = getattr(tensor_ops_cpp, 'has_fma', False)
+        info['has_avx2'] = getattr(tensor_ops_cpp, 'has_avx2', False)
+        info['has_avx512'] = getattr(tensor_ops_cpp, 'has_avx512', False)
+        info['has_neon'] = getattr(tensor_ops_cpp, 'has_neon', False)
+    
+    return info
 
 
 def print_backend_info():
@@ -100,11 +111,25 @@ def print_backend_info():
     print("Tensor Operations Backend:")
     print(f"  C++ extensions: {'✓' if info['has_cpp_ext'] else '✗'}")
     print(f"  SIMD support:   {'✓' if info['has_simd'] else '✗'}")
+    
+    if info['has_cpp_ext']:
+        print(f"  SIMD level:     {info.get('simd_level', 'Unknown')}")
+        print(f"  OpenMP:         {'✓' if info.get('has_openmp') else '✗'}")
+        print(f"  FMA:            {'✓' if info.get('has_fma') else '✗'}")
+    
+    print(f"\nOperation implementations:")
     print(f"  RMS norm:       {info['rms_norm']}")
     print(f"  SiLU:           {info['silu']}")
     print(f"  GELU:           {info['gelu']}")
     print(f"  Matmul:         {info['matmul']}")
     print(f"  Other ops:      {info['other_ops']}")
+    
+    if HAS_CPP_EXT:
+        print(f"\nDetailed optimization info:")
+        try:
+            print(tensor_ops_cpp.get_optimization_info())
+        except:
+            pass
 
 
 # Print info on import

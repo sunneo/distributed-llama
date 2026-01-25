@@ -90,8 +90,24 @@ print(f"OpenMP: {tensor_ops_cpp.has_openmp}")
 print(f"AVX2: {tensor_ops_cpp.has_avx2}")
 print(f"FMA: {tensor_ops_cpp.has_fma}")
 ```
-
 ## Usage
+
+### Quick Test
+
+After building, test the extension:
+
+```bash
+cd mix/target/airllm/cpp_ext
+
+# Quick functionality test
+python -c "import tensor_ops_cpp; print(tensor_ops_cpp.get_optimization_info())"
+
+# Run comprehensive examples
+python examples.py
+
+# Run detection and benchmark
+python detect_and_benchmark.py
+```
 
 ### Direct Usage
 
@@ -133,6 +149,8 @@ y = tensor_ops_hybrid.rms_norm(x, weight)
 # Check which backend is being used
 tensor_ops_hybrid.print_backend_info()
 ```
+
+**Note**: The hybrid module is part of the airllm package and requires additional dependencies (psutil, etc.). For standalone usage of the C++ extension, use the direct import method above.
 
 ## Performance
 
