@@ -8,11 +8,103 @@ This module implements the core tensor operations needed for transformer layers:
 - Multi-head attention
 - Activation functions (SiLU, GELU)
 - Feed-forward network (FFN)
+
+Automatically detects and uses accelerated backends (CUDA, OpenCL, C++) when available.
 """
 
 import numpy as np
 from typing import Tuple, Optional
 from .model_header import ModelHeader, RopeType
+import os
+
+# Backend detection
+_backend = None
+_backend_module = None
+
+def _detect_backend():
+    """Detect and initialize the best available backend."""
+    global _backend, _backend_module
+    
+    if _backend is not None:
+        return _backend
+    
+    # Try CUDA backend first (highest performance for NVIDIA GPUs)
+    try:
+        import tensor_ops_cuda
+        _backend = 'cuda'
+        _backend_module = tensor_ops_cuda
+        return _backend
+    except ImportError:
+        pass
+    
+    # Try OpenCL backend (works on many GPUs)
+    try:
+        import tensor_ops_opencl
+        _backend = 'opencl'
+        _backend_module = tensor_ops_opencl
+        return _backend
+    except ImportError:
+        pass
+    
+    # Try C++ backend (CPU optimizations)
+    try:
+        import tensor_ops_cpp
+        _backend = 'cpp'
+        _backend_module = tensor_ops_cpp
+        return _backend
+    except ImportError:
+        pass
+    
+    # Fall back to pure Python
+    _backend = 'python'
+    _backend_module = None
+    return _backend
+
+# Initialize backend on module import
+_detect_backend()
+
+def get_backend():
+    """Get the currently active backend name."""
+    return _backend
+
+def get_backend_info():
+    """Get information about the active backend."""
+    info = {
+        'backend': _backend,
+        'available_backends': []
+    }
+    
+    # Check all available backends
+    try:
+        import tensor_ops_cuda
+        info['available_backends'].append('cuda')
+    except ImportError:
+        pass
+    
+    try:
+        import tensor_ops_opencl
+        info['available_backends'].append('opencl')
+    except ImportError:
+        pass
+    
+    try:
+        import tensor_ops_cpp
+        info['available_backends'].append('cpp')
+    except ImportError:
+        pass
+    
+    info['available_backends'].append('python')
+    
+    # Add backend-specific info
+    if _backend_module is not None:
+        if hasattr(_backend_module, 'get_cuda_info'):
+            info['cuda_info'] = _backend_module.get_cuda_info()
+        elif hasattr(_backend_module, 'get_opencl_info'):
+            info['opencl_info'] = _backend_module.get_opencl_info()
+        elif hasattr(_backend_module, 'get_optimization_info'):
+            info['cpp_info'] = _backend_module.get_optimization_info()
+    
+    return info
 
 
 def rms_norm(x: np.ndarray, weight: np.ndarray, eps: float = 1e-6) -> np.ndarray:
@@ -30,6 +122,11 @@ def rms_norm(x: np.ndarray, weight: np.ndarray, eps: float = 1e-6) -> np.ndarray
     Returns:
         Normalized tensor of same shape as input
     """
+    # Use accelerated backend if available
+    if _backend_module is not None and hasattr(_backend_module, 'rms_norm'):
+        return _backend_module.rms_norm(x, weight, eps)
+    
+    # Python fallback implementation
     # Compute RMS: sqrt(mean(x^2))
     rms = np.sqrt(np.mean(x * x, axis=-1, keepdims=True) + eps)
     
@@ -320,6 +417,11 @@ def silu(x: np.ndarray) -> np.ndarray:
     Returns:
         Activated tensor of same shape
     """
+    # Use accelerated backend if available
+    if _backend_module is not None and hasattr(_backend_module, 'silu'):
+        return _backend_module.silu(x)
+    
+    # Python fallback implementation
     return x / (1.0 + np.exp(-x))
 
 
@@ -335,6 +437,11 @@ def gelu(x: np.ndarray) -> np.ndarray:
     Returns:
         Activated tensor of same shape
     """
+    # Use accelerated backend if available
+    if _backend_module is not None and hasattr(_backend_module, 'gelu'):
+        return _backend_module.gelu(x)
+    
+    # Python fallback implementation
     # Use tanh approximation for efficiency
     sqrt_2_over_pi = np.sqrt(2.0 / np.pi)
     inner = sqrt_2_over_pi * (x + 0.044715 * x * x * x)

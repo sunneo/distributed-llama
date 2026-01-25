@@ -374,10 +374,10 @@ class BuildCudaCommand(Command):
             return
         
         print("Building CUDA backend...")
-        # Build with nvcc
+        # Build with nvcc - use C++14 to fix template parameter pack issues
         cmd = [
-            'nvcc', '-O3', '-shared', '-Xcompiler', '-fPIC',
-            '--compiler-options', '-I' + pybind11.get_include(), '-I/usr/include/python3.10',
+            'nvcc', '-O3', '-std=c++14', '-shared', '-Xcompiler', '-fPIC',
+            '--compiler-options', '-I' + pybind11.get_include(),
             '-o', 'tensor_ops_cuda' + self._get_extension_suffix(),
             'tensor_ops_cuda.cu'
         ]
