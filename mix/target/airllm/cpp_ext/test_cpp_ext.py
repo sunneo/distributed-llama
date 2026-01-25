@@ -1,5 +1,5 @@
 """
-Test script for C++ extension module.
+Test script for C++ extension module with capability testing.
 
 This tests the C++ implementations and compares them with Python versions.
 """
@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 import numpy as np
 
+
 def test_cpp_extension():
     """Test if C++ extension is available and working."""
     print("=== Testing C++ Extension ===\n")
@@ -17,7 +18,16 @@ def test_cpp_extension():
     try:
         import tensor_ops_cpp
         print("✓ C++ extension imported successfully")
-        print(f"  SIMD support: {tensor_ops_cpp.has_simd}")
+        print(f"\n{tensor_ops_cpp.get_optimization_info()}")
+        print(f"\nCapability flags:")
+        print(f"  has_simd: {tensor_ops_cpp.has_simd}")
+        print(f"  simd_level: {tensor_ops_cpp.simd_level}")
+        print(f"  has_openmp: {tensor_ops_cpp.has_openmp}")
+        print(f"  has_fma: {tensor_ops_cpp.has_fma}")
+        print(f"  has_avx512: {tensor_ops_cpp.has_avx512}")
+        print(f"  has_avx2: {tensor_ops_cpp.has_avx2}")
+        print(f"  has_avx: {tensor_ops_cpp.has_avx}")
+        print(f"  has_neon: {tensor_ops_cpp.has_neon}")
         return True
     except ImportError as e:
         print(f"✗ C++ extension not available: {e}")
