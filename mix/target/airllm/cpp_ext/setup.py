@@ -204,10 +204,14 @@ class CapabilityDetector:
     
     def detect_avx_vnni(self):
         """Detect AVX-VNNI support (Intel Core Ultra 7 155U and newer)."""
-        # First check CPU flags
-        if 'avx_vnni' not in self.runtime_cpu_flags and sys.platform.startswith('linux'):
-            self.capabilities['avx_vnni'] = False
-            return False
+        # First check CPU flags - check for multiple possible flag names
+        if sys.platform.startswith('linux'):
+            # AVX-VNNI can appear as 'avx_vnni' or 'avx_vnni_int8' in cpuinfo
+            has_vnni_flag = any(flag in self.runtime_cpu_flags 
+                               for flag in ['avx_vnni', 'avx_vnni_int8', 'avxvnni'])
+            if not has_vnni_flag:
+                self.capabilities['avx_vnni'] = False
+                return False
         
         code = """
         #include <immintrin.h>
