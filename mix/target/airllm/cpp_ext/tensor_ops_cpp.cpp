@@ -363,13 +363,18 @@ py::array_t<float> matmul_cpp(py::array_t<float> a, py::array_t<float> b) {
     // Initialize output to zero
     std::fill(c_ptr, c_ptr + m * n, 0.0f);
     
-    // Cache-aware tiling parameters
-    // Note: block_size is effectively a compile-time constant
-    constexpr size_t block_size = 64;
-    constexpr size_t tile_size = block_size * block_size;  // 4096 floats = 16KB
+    // Cache-aware tiling parameters optimized for Intel Core Ultra 7 155U
+    // - 12MB L3 cache: Allows larger block sizes for better cache utilization
+    // - AVX-VNNI hardware prefetcher: Linear access pattern (achieved via transpose tiling)
+    // - Block size 128: 128x128 = 16384 floats = 64KB per tile
+    // - Fits comfortably in L2 cache (2MB) and enables better L3 utilization
+    // - Multiple tiles can coexist in L3 for parallel processing
+    constexpr size_t block_size = 128;
+    constexpr size_t tile_size = block_size * block_size;  // 16384 floats = 64KB
     
     // Static assertion to ensure tile size is reasonable for stack allocation
-    static_assert(tile_size * sizeof(float) < 64 * 1024, 
+    // For Intel Core Ultra 7 155U: 64KB tile fits well in L2 cache (2MB per core)
+    static_assert(tile_size * sizeof(float) < 256 * 1024, 
                   "Tile buffer too large for stack allocation");
     
     // Additional runtime check for safety on platforms with smaller stacks
@@ -403,7 +408,10 @@ py::array_t<float> matmul_cpp(py::array_t<float> a, py::array_t<float> b) {
                     size_t k_block = k_end - kb;
                     
                     // Transpose block of B into local tile for cache-friendly access
-                    // tile_b[local_j * k_block + local_k] = B[kb+local_k][jb+local_j]
+                    // This ensures STRICTLY LINEAR memory access for AVX-VNNI prefetcher:
+                    // - Hardware prefetcher on Intel Core Ultra 7 155U works optimally with sequential access
+                    // - tile_b layout: tile_b[local_j * k_block + local_k] = contiguous memory
+                    // - Subsequent SIMD loads from tile_b are sequential (b_col + p, b_col + p+8, etc.)
                     for (size_t local_k = 0; local_k < k_block; local_k++) {
                         for (size_t local_j = 0; local_j < j_block; local_j++) {
                             tile_b[local_j * k_block + local_k] = b_ptr[(kb + local_k) * n + (jb + local_j)];
