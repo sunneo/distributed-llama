@@ -26,6 +26,7 @@ class CapabilityDetector:
             'avx': False,
             'avx2': False,
             'avx512': False,
+            'avx_vnni': False,  # AVX-VNNI (Intel Core Ultra 7 155U and newer)
             'fma': False,
             'neon': False,
             'cuda': False,
@@ -201,6 +202,31 @@ class CapabilityDetector:
         self.capabilities['fma'] = self._test_compile_and_run(code, ['-mfma', '-mavx2'])
         return self.capabilities['fma']
     
+    def detect_avx_vnni(self):
+        """Detect AVX-VNNI support (Intel Core Ultra 7 155U and newer)."""
+        # First check CPU flags - check for multiple possible flag names
+        if sys.platform.startswith('linux'):
+            # AVX-VNNI can appear as 'avx_vnni' or 'avx_vnni_int8' in cpuinfo
+            has_vnni_flag = any(flag in self.runtime_cpu_flags 
+                               for flag in ['avx_vnni', 'avx_vnni_int8', 'avxvnni'])
+            if not has_vnni_flag:
+                self.capabilities['avx_vnni'] = False
+                return False
+        
+        code = """
+        #include <immintrin.h>
+        int main() {
+            __m256i a = _mm256_setzero_si256();
+            __m256i b = _mm256_setzero_si256();
+            __m256i c = _mm256_setzero_si256();
+            // AVX-VNNI: vpdpbusd instruction
+            c = _mm256_dpbusd_epi32(c, a, b);
+            return 0;
+        }
+        """
+        self.capabilities['avx_vnni'] = self._test_compile_and_run(code, ['-mavxvnni', '-mavx2'])
+        return self.capabilities['avx_vnni']
+    
     def detect_neon(self):
         """Detect ARM NEON support."""
         code = """
@@ -270,6 +296,7 @@ class CapabilityDetector:
             ('AVX', self.detect_avx),
             ('AVX2', self.detect_avx2),
             ('AVX-512', self.detect_avx512),
+            ('AVX-VNNI', self.detect_avx_vnni),
             ('FMA', self.detect_fma),
             ('ARM NEON', self.detect_neon),
             ('CUDA', self.detect_cuda),
@@ -304,6 +331,9 @@ class CapabilityDetector:
                 flags.extend(['-mavx512f', '-mavx512dq'])
             elif self.capabilities['avx2'] and self.capabilities['fma']:
                 flags.extend(['-mavx2', '-mfma'])
+                # Add AVX-VNNI if available (Intel Core Ultra 7 155U and newer)
+                if self.capabilities['avx_vnni']:
+                    flags.append('-mavxvnni')
             elif self.capabilities['avx']:
                 flags.append('-mavx')
         else:
@@ -560,6 +590,8 @@ class CustomBuildExt(build_ext):
                 ext.define_macros.append(('USE_AVX2', '1'))
             if detector.capabilities['avx']:
                 ext.define_macros.append(('USE_AVX', '1'))
+            if detector.capabilities['avx_vnni']:
+                ext.define_macros.append(('USE_AVX_VNNI', '1'))
             if detector.capabilities['fma']:
                 ext.define_macros.append(('USE_FMA', '1'))
             if detector.capabilities['neon']:
