@@ -31,7 +31,7 @@ SSH_FLAGS=()
 validate_opts() {
   local name="$1"
   local value="$2"
-  if [[ "${value}" =~ [^[:alnum:][:space:]=/_.,:@+-] ]]; then
+  if [[ "${value}" =~ [^[:alnum:][:space:]=/._:@+-] ]]; then
     echo "[deploy_workers] ${name} contains unsupported characters"
     exit 1
   fi
@@ -60,10 +60,17 @@ while IFS= read -r NODE; do
   [[ -z "${NODE}" || "${NODE}" =~ ^# ]] && continue
 
   echo "[deploy_workers] -> ${NODE}"
-  ssh "${SSH_FLAGS[@]}" "${NODE}" "mkdir -p '${REMOTE_DIR}'"
-  scp "${SCP_FLAGS[@]}" "${BUNDLE_PATH}" "${NODE}:${REMOTE_BUNDLE_PATH}"
-  ssh "${SSH_FLAGS[@]}" "${NODE}" "tar -xzf '${REMOTE_BUNDLE_PATH}' -C '${REMOTE_DIR}'"
-  ssh "${SSH_FLAGS[@]}" "${NODE}" "cd '${REMOTE_DIR}/mix/target/distributed-llama.python' && '${PYTHON_BIN}' -m pip install -r requirements.txt"
+  ssh "${SSH_FLAGS[@]}" "${NODE}" "mkdir -p '${REMOTE_DIR}'" \
+    || { echo "[deploy_workers] Failed to create remote dir on ${NODE}"; exit 1; }
+
+  scp "${SCP_FLAGS[@]}" "${BUNDLE_PATH}" "${NODE}:${REMOTE_BUNDLE_PATH}" \
+    || { echo "[deploy_workers] Failed to copy bundle to ${NODE}"; exit 1; }
+
+  ssh "${SSH_FLAGS[@]}" "${NODE}" "tar -xzf '${REMOTE_BUNDLE_PATH}' -C '${REMOTE_DIR}'" \
+    || { echo "[deploy_workers] Failed to extract bundle on ${NODE}"; exit 1; }
+
+  ssh "${SSH_FLAGS[@]}" "${NODE}" "cd '${REMOTE_DIR}/mix/target/distributed-llama.python' && '${PYTHON_BIN}' -m pip install -r requirements.txt" \
+    || { echo "[deploy_workers] Failed to install Python requirements on ${NODE}"; exit 1; }
 done < "${NODES_FILE}"
 
 echo "[deploy_workers] Completed deployment to all nodes listed in ${NODES_FILE}"
