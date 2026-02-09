@@ -19,14 +19,20 @@ if ! command -v nc >/dev/null 2>&1; then
   exit 1
 fi
 
+validate_node() {
+  local value="$1"
+  if [[ ! "${value}" =~ ^([A-Za-z0-9._-]+@)?[A-Za-z0-9._-]+(:[0-9]+)?$ ]]; then
+    echo "[test_connection] Invalid node entry: ${value}"
+    exit 1
+  fi
+}
 validate_host() {
   local value="$1"
-  if [[ ! "${value}" =~ ^[A-Za-z0-9._:-]+$ ]]; then
+  if [[ ! "${value}" =~ ^[A-Za-z0-9._-]+$ ]]; then
     echo "[test_connection] Invalid host entry: ${value}"
     exit 1
   fi
 }
-
 validate_port() {
   local value="$1"
   if [[ ! "${value}" =~ ^[0-9]+$ ]] || (( value < 1 || value > 65535 )); then
@@ -36,13 +42,6 @@ validate_port() {
 }
 
 validate_port "${PORT}"
-validate_node() {
-  local value="$1"
-  if [[ ! "${value}" =~ ^([A-Za-z0-9._-]+@)?[A-Za-z0-9._:-]+(:[0-9]+)?$ ]]; then
-    echo "[test_connection] Invalid node entry: ${value}"
-    exit 1
-  fi
-}
 
 if [[ ! -f "${NODES_FILE}" ]]; then
   echo "[test_connection] Nodes file not found: ${NODES_FILE}"
