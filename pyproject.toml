@@ -56,11 +56,11 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["mix/target"]
-include = ["airllm*", "distributed-llama.python*"]
+include = ["airllm*", "distributed_llama_python*"]
 
 [tool.setuptools.package-dir]
 airllm = "mix/target/airllm"
-distributed_llama_python = "mix/target/distributed-llama.python"
+distributed_llama_python = "mix/target/distributed_llama_python"
 
 [tool.setuptools.package-data]
 airllm = ["*.md", "cpp_ext/*.cpp", "cpp_ext/*.cu", "cpp_ext/*.py", "cpp_ext/*.so", "cpp_ext/*.pyd", "cpp_ext/*.dll", "cpp_ext/*.json", "examples/*.py"]

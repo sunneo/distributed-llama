@@ -173,7 +173,7 @@ setup(
     ],
     package_dir={
         'airllm': 'mix/target/airllm',
-        'distributed_llama_python': 'mix/target/distributed-llama.python',
+        'distributed_llama_python': 'mix/target/distributed_llama_python',
     },
     package_data=get_package_data(),
     include_package_data=True,
