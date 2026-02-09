@@ -1,0 +1,67 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "pybind11>=2.6.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "distributed-llama"
+version = "0.1.0"
+description = "Distributed LLM Inference with AirLLM optimization"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "Distributed-Llama Contributors"}
+]
+keywords = ["llm", "distributed", "inference", "ai", "machine-learning"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: C++",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "numpy>=1.21.0",
+    "psutil>=5.8.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=3.0.0",
+]
+cpp = [
+    "pybind11>=2.6.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/b4rtaz/distributed-llama"
+Repository = "https://github.com/b4rtaz/distributed-llama"
+Documentation = "https://github.com/b4rtaz/distributed-llama/tree/main/docs"
+
+[project.scripts]
+dllama-worker = "distributed_llama_python.worker:main"
+
+[tool.setuptools]
+zip-safe = false
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["mix/target"]
+include = ["airllm*", "distributed-llama.python*"]
+
+[tool.setuptools.package-dir]
+airllm = "mix/target/airllm"
+distributed_llama_python = "mix/target/distributed-llama.python"
+
+[tool.setuptools.package-data]
+airllm = ["*.md", "cpp_ext/*.cpp", "cpp_ext/*.cu", "cpp_ext/*.py", "cpp_ext/*.so", "cpp_ext/*.pyd", "cpp_ext/*.dll", "cpp_ext/*.json", "examples/*.py"]
+distributed_llama_python = ["*.txt", "*.md"]
