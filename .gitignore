@@ -12,6 +12,7 @@ __pycache__
 /models
 main
 run*.sh
+!install/run_benchmark.sh
 server
 /dllama
 /dllama-*
