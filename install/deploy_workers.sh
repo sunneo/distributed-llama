@@ -23,6 +23,17 @@ NODES_FILE="$1"
 REMOTE_DIR="$2"
 PYTHON_BIN="${PYTHON:-python3}"
 BUNDLE_PATH="${BUNDLE_PATH:-${SCRIPT_DIR}/dist-worker-bundle.tar.gz}"
+REMOTE_BUNDLE_NAME="$(basename "${BUNDLE_PATH}")"
+REMOTE_BUNDLE_PATH="${REMOTE_DIR}/${REMOTE_BUNDLE_NAME}"
+
+SCP_FLAGS=()
+SSH_FLAGS=()
+if [[ -n "${SCP_OPTS:-}" ]]; then
+  read -r -a SCP_FLAGS <<< "${SCP_OPTS}"
+fi
+if [[ -n "${SSH_OPTS:-}" ]]; then
+  read -r -a SSH_FLAGS <<< "${SSH_OPTS}"
+fi
 
 if [[ ! -f "${NODES_FILE}" ]]; then
   echo "[deploy_workers] Nodes file not found: ${NODES_FILE}"
@@ -38,9 +49,10 @@ while IFS= read -r NODE; do
   [[ -z "${NODE}" || "${NODE}" =~ ^# ]] && continue
 
   echo "[deploy_workers] -> ${NODE}"
-  scp ${SCP_OPTS:-} "${BUNDLE_PATH}" "${NODE}:${REMOTE_DIR}/worker-bundle.tgz"
-  ssh ${SSH_OPTS:-} "${NODE}" "mkdir -p ${REMOTE_DIR} && tar -xzf ${REMOTE_DIR}/worker-bundle.tgz -C ${REMOTE_DIR}"
-  ssh ${SSH_OPTS:-} "${NODE}" "cd ${REMOTE_DIR}/mix/target/distributed-llama.python && ${PYTHON_BIN} -m pip install -r requirements.txt"
+  ssh "${SSH_FLAGS[@]}" "${NODE}" "mkdir -p ${REMOTE_DIR}"
+  scp "${SCP_FLAGS[@]}" "${BUNDLE_PATH}" "${NODE}:${REMOTE_BUNDLE_PATH}"
+  ssh "${SSH_FLAGS[@]}" "${NODE}" "tar -xzf ${REMOTE_BUNDLE_PATH} -C ${REMOTE_DIR}"
+  ssh "${SSH_FLAGS[@]}" "${NODE}" "cd ${REMOTE_DIR}/mix/target/distributed-llama.python && ${PYTHON_BIN} -m pip install -r requirements.txt"
 done < "${NODES_FILE}"
 
 echo "[deploy_workers] Completed deployment to all nodes listed in ${NODES_FILE}"
