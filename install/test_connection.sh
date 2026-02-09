@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+COMMON_HELPERS="${SCRIPT_DIR}/common.sh"
+if [[ ! -f "${COMMON_HELPERS}" ]]; then
+  echo "[test_connection] Missing common helpers at ${COMMON_HELPERS}"
+  exit 1
+fi
+# shellcheck source=install/common.sh
+. "${COMMON_HELPERS}"
+
 # Simple TCP reachability test from the root node to workers.
 # Usage: test_connection.sh <nodes_file> [port]
 #   nodes_file: matches deploy_workers.sh (SSH targets; format: [user@]host)
@@ -18,28 +27,6 @@ if ! command -v nc >/dev/null 2>&1; then
   echo "[test_connection] Error: netcat (nc) is not installed. Please install it to use this script."
   exit 1
 fi
-
-validate_node() {
-  local value="$1"
-  if [[ ! "${value}" =~ ^([A-Za-z0-9._-]+@)?[A-Za-z0-9._-]+(:[0-9]+)?$ ]]; then
-    echo "[test_connection] Invalid node entry: ${value}"
-    exit 1
-  fi
-}
-validate_host() {
-  local value="$1"
-  if [[ ! "${value}" =~ ^[A-Za-z0-9._-]+$ ]]; then
-    echo "[test_connection] Invalid host entry: ${value}"
-    exit 1
-  fi
-}
-validate_port() {
-  local value="$1"
-  if [[ ! "${value}" =~ ^[0-9]+$ ]] || (( value < 1 || value > 65535 )); then
-    echo "[test_connection] Invalid port: ${value}"
-    exit 1
-  fi
-}
 
 validate_port "${PORT}"
 

@@ -18,6 +18,13 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+COMMON_HELPERS="${SCRIPT_DIR}/common.sh"
+if [[ ! -f "${COMMON_HELPERS}" ]]; then
+  echo "[deploy_workers] Missing common helpers at ${COMMON_HELPERS}"
+  exit 1
+fi
+# shellcheck source=install/common.sh
+. "${COMMON_HELPERS}"
 
 NODES_FILE="$1"
 REMOTE_DIR="$2"
@@ -31,7 +38,7 @@ SSH_FLAGS=()
 validate_flag() {
   local name="$1"
   local value="$2"
-  if [[ ! "${value}" =~ ^[-A-Za-z0-9=/_@.+:]+$ || "${value}" =~ ProxyCommand ]]; then
+  if [[ ! "${value}" =~ ^[-A-Za-z0-9/._@+]+$ || "${value}" =~ ProxyCommand ]]; then
     echo "[deploy_workers] ${name} contains unsupported characters: ${value}"
     exit 1
   fi
@@ -39,15 +46,8 @@ validate_flag() {
 validate_path() {
   local name="$1"
   local value="$2"
-  if [[ ! "${value}" =~ ^[A-Za-z0-9._/+\-~ ]+$ ]]; then
+  if [[ ! "${value}" =~ ^[A-Za-z0-9._/+\-~]+$ ]]; then
     echo "[deploy_workers] ${name} contains invalid characters"
-    exit 1
-  fi
-}
-validate_node() {
-  local value="$1"
-  if [[ ! "${value}" =~ ^([A-Za-z0-9._-]+@)?[A-Za-z0-9._-]+(:[0-9]+)?$ ]]; then
-    echo "[deploy_workers] Invalid node entry: ${value}"
     exit 1
   fi
 }
@@ -85,22 +85,25 @@ fi
 
 validate_path "REMOTE_DIR" "${REMOTE_DIR}"
 validate_cmd "PYTHON_BIN" "${PYTHON_BIN}"
+SAFE_REMOTE_DIR=$(printf "%q" "${REMOTE_DIR}")
+SAFE_REMOTE_BUNDLE_PATH=$(printf "%q" "${REMOTE_BUNDLE_PATH}")
+SAFE_PYTHON_BIN=$(printf "%q" "${PYTHON_BIN}")
 
 while IFS= read -r NODE; do
   [[ -z "${NODE}" || "${NODE}" =~ ^# ]] && continue
   validate_node "${NODE}"
 
   echo "[deploy_workers] -> ${NODE}"
-  ssh "${SSH_FLAGS[@]}" "${NODE}" "mkdir -p '${REMOTE_DIR}'" \
+  ssh "${SSH_FLAGS[@]}" "${NODE}" "mkdir -p ${SAFE_REMOTE_DIR}" \
     || { echo "[deploy_workers] Failed to create remote dir on ${NODE}"; exit 1; }
 
-  scp "${SCP_FLAGS[@]}" "${BUNDLE_PATH}" "${NODE}:${REMOTE_BUNDLE_PATH}" \
+  scp "${SCP_FLAGS[@]}" "${BUNDLE_PATH}" "${NODE}:${SAFE_REMOTE_BUNDLE_PATH}" \
     || { echo "[deploy_workers] Failed to copy bundle to ${NODE}"; exit 1; }
 
-  ssh "${SSH_FLAGS[@]}" "${NODE}" "tar -xzf '${REMOTE_BUNDLE_PATH}' -C '${REMOTE_DIR}'" \
+  ssh "${SSH_FLAGS[@]}" "${NODE}" "tar -xzf ${SAFE_REMOTE_BUNDLE_PATH} -C ${SAFE_REMOTE_DIR}" \
     || { echo "[deploy_workers] Failed to extract bundle on ${NODE}"; exit 1; }
 
-  ssh "${SSH_FLAGS[@]}" "${NODE}" "cd '${REMOTE_DIR}/mix/target/distributed-llama.python' && '${PYTHON_BIN}' -m pip install -r requirements.txt" \
+  ssh "${SSH_FLAGS[@]}" "${NODE}" "cd ${SAFE_REMOTE_DIR}/mix/target/distributed-llama.python && ${SAFE_PYTHON_BIN} -m pip install -r requirements.txt" \
     || { echo "[deploy_workers] Failed to install Python requirements on ${NODE}"; exit 1; }
 done < "${NODES_FILE}"
 
