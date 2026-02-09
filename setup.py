@@ -36,7 +36,12 @@ LICENSE = "MIT"
 REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
 MIX_TARGET = os.path.join(REPO_ROOT, "mix", "target")
 AIRLLM_PATH = os.path.join(MIX_TARGET, "airllm")
-DLLAMA_PY_PATH = os.path.join(MIX_TARGET, "distributed-llama.python")
+# Note: The source directory is named 'distributed-llama.python' (with dash)
+# but we use 'distributed_llama_python' (with underscores) as the Python package name
+# via a symlink to comply with Python naming conventions
+DLLAMA_PY_SOURCE_DIR = "distributed-llama.python"  # Original source directory name
+DLLAMA_PY_PACKAGE_DIR = "distributed_llama_python"  # Python package name (via symlink)
+DLLAMA_PY_PATH = os.path.join(MIX_TARGET, DLLAMA_PY_SOURCE_DIR)
 CPP_EXT_PATH = os.path.join(AIRLLM_PATH, "cpp_ext")
 
 def read_requirements(filename):
@@ -107,8 +112,9 @@ class BuildCppExtensions(_build_ext):
             
         except subprocess.CalledProcessError as e:
             print(f"\n✗ Warning: Failed to build C++ extensions: {e}")
-            print("  Standard output:", e.stdout if hasattr(e, 'stdout') else "N/A")
-            print("  Standard error:", e.stderr if hasattr(e, 'stderr') else "N/A")
+            # Note: stdout and stderr are always available when capture_output=True
+            print("  Standard output:", e.stdout)
+            print("  Standard error:", e.stderr)
             print("\n  The package will still be installed, but without C++ optimizations.")
             print("  You can manually build the C++ extensions later by running:")
             print(f"    cd {CPP_EXT_PATH}")

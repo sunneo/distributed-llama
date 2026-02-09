@@ -15,7 +15,8 @@ def test_imports():
     try:
         print("\n1. Testing airllm import...")
         import airllm
-        print(f"   ✓ airllm version: {airllm.__version__}")
+        version = getattr(airllm, '__version__', 'unknown')
+        print(f"   ✓ airllm version: {version}")
         print(f"   ✓ airllm location: {airllm.__file__}")
         
         print("\n2. Testing airllm submodules...")
@@ -26,7 +27,8 @@ def test_imports():
         
         print("\n3. Testing distributed_llama_python import...")
         import distributed_llama_python
-        print(f"   ✓ distributed_llama_python version: {distributed_llama_python.__version__}")
+        version = getattr(distributed_llama_python, '__version__', 'unknown')
+        print(f"   ✓ distributed_llama_python version: {version}")
         print(f"   ✓ distributed_llama_python location: {distributed_llama_python.__file__}")
         
         print("\n4. Testing distributed_llama_python submodules...")

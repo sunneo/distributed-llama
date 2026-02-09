@@ -29,7 +29,7 @@ The installation process now properly packages both `mix/target/airllm` and `mix
 - **🚀 Optimized C++ Extensions**: Automatically builds and includes optimized tensor operations with AVX2/AVX-512/NEON support
 - **📦 Proper Packaging**: Uses modern Python packaging (setup.py + pyproject.toml)
 - **🔧 Easy Installation**: Simple pip install with automatic dependency management
-- **⚡ Performance**: C++ extensions provide 5-15x speedup for tensor operations
+- **⚡ Performance**: C++ extensions provide significant performance improvements for tensor operations
 
 ## Installation Methods
 
