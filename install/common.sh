@@ -61,7 +61,7 @@ validate_cmd() {
 validate_opts_string() {
   local name="$1"
   local value="$2"
-  if [[ "${value}" =~ [^A-Za-z0-9/._@+ -] ]]; then
+  if [[ "${value}" =~ [^A-Za-z0-9/._@+\ \-] ]]; then
     echo "[common] ${name} contains invalid spacing or characters"
     exit 1
   fi
