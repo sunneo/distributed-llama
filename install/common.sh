@@ -23,3 +23,31 @@ validate_port() {
     exit 1
   fi
 }
+
+validate_flag() {
+  local name="$1"
+  local value="$2"
+  local lower="${value,,}"
+  if [[ ! "${value}" =~ ^[-A-Za-z0-9/._@+]+$ || "${lower}" =~ proxy ]]; then
+    echo "[common] ${name} contains unsupported characters: ${value}"
+    exit 1
+  fi
+}
+
+validate_path() {
+  local name="$1"
+  local value="$2"
+  if [[ ! "${value}" =~ ^[A-Za-z0-9._/+\-~]+$ ]]; then
+    echo "[common] ${name} contains invalid characters"
+    exit 1
+  fi
+}
+
+validate_cmd() {
+  local name="$1"
+  local value="$2"
+  if [[ ! "${value}" =~ ^[A-Za-z0-9._+/-]+$ ]]; then
+    echo "[common] ${name} contains invalid characters"
+    exit 1
+  fi
+}
