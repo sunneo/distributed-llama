@@ -14,6 +14,11 @@ fi
 NODES_FILE="$1"
 PORT="${2:-${WORKER_PORT:-9999}}"
 
+if ! command -v nc >/dev/null 2>&1; then
+  echo "[test_connection] Error: netcat (nc) is not installed. Please install it to use this script."
+  exit 1
+fi
+
 if [[ ! -f "${NODES_FILE}" ]]; then
   echo "[test_connection] Nodes file not found: ${NODES_FILE}"
   exit 1

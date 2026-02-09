@@ -28,10 +28,21 @@ REMOTE_BUNDLE_PATH="${REMOTE_DIR}/${REMOTE_BUNDLE_NAME}"
 
 SCP_FLAGS=()
 SSH_FLAGS=()
+validate_opts() {
+  local name="$1"
+  local value="$2"
+  if [[ "${value}" =~ [^[:alnum:][:space:]=/_.,:@+-] ]]; then
+    echo "[deploy_workers] ${name} contains unsupported characters"
+    exit 1
+  fi
+}
+
 if [[ -n "${SCP_OPTS:-}" ]]; then
+  validate_opts "SCP_OPTS" "${SCP_OPTS}"
   read -r -a SCP_FLAGS <<< "${SCP_OPTS}"
 fi
 if [[ -n "${SSH_OPTS:-}" ]]; then
+  validate_opts "SSH_OPTS" "${SSH_OPTS}"
   read -r -a SSH_FLAGS <<< "${SSH_OPTS}"
 fi
 
@@ -49,10 +60,10 @@ while IFS= read -r NODE; do
   [[ -z "${NODE}" || "${NODE}" =~ ^# ]] && continue
 
   echo "[deploy_workers] -> ${NODE}"
-  ssh "${SSH_FLAGS[@]}" "${NODE}" "mkdir -p ${REMOTE_DIR}"
+  ssh "${SSH_FLAGS[@]}" "${NODE}" "mkdir -p '${REMOTE_DIR}'"
   scp "${SCP_FLAGS[@]}" "${BUNDLE_PATH}" "${NODE}:${REMOTE_BUNDLE_PATH}"
-  ssh "${SSH_FLAGS[@]}" "${NODE}" "tar -xzf ${REMOTE_BUNDLE_PATH} -C ${REMOTE_DIR}"
-  ssh "${SSH_FLAGS[@]}" "${NODE}" "cd ${REMOTE_DIR}/mix/target/distributed-llama.python && ${PYTHON_BIN} -m pip install -r requirements.txt"
+  ssh "${SSH_FLAGS[@]}" "${NODE}" "tar -xzf '${REMOTE_BUNDLE_PATH}' -C '${REMOTE_DIR}'"
+  ssh "${SSH_FLAGS[@]}" "${NODE}" "cd '${REMOTE_DIR}/mix/target/distributed-llama.python' && '${PYTHON_BIN}' -m pip install -r requirements.txt"
 done < "${NODES_FILE}"
 
 echo "[deploy_workers] Completed deployment to all nodes listed in ${NODES_FILE}"
