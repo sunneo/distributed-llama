@@ -1,0 +1,5 @@
+# One SSH target per line. Use formats accepted by ssh/scp (e.g., user@host).
+# These entries are reused by test_connection.sh (host is extracted automatically).
+root@192.168.1.10
+worker@192.168.1.11
+worker@192.168.1.12
