@@ -6,6 +6,12 @@ validate_node() {
     echo "[common] Invalid node entry: ${value}"
     exit 1
   fi
+  local host_port="${value##*@}"
+  local host="${host_port%%:*}"
+  if [[ ! "${host}" =~ ^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*$ ]]; then
+    echo "[common] Invalid hostname in node entry: ${value}"
+    exit 1
+  fi
 }
 
 validate_host() {
@@ -48,6 +54,15 @@ validate_cmd() {
   local value="$2"
   if [[ ! "${value}" =~ ^[A-Za-z0-9._+/-]+$ ]]; then
     echo "[common] ${name} contains invalid characters"
+    exit 1
+  fi
+}
+
+validate_opts_string() {
+  local name="$1"
+  local value="$2"
+  if [[ "${value}" =~ [^A-Za-z0-9/._@+ -] ]]; then
+    echo "[common] ${name} contains invalid spacing or characters"
     exit 1
   fi
 }

@@ -36,12 +36,14 @@ REMOTE_BUNDLE_PATH="${REMOTE_DIR}/${REMOTE_BUNDLE_NAME}"
 SCP_FLAGS=()
 SSH_FLAGS=()
 if [[ -n "${SCP_OPTS:-}" ]]; then
+  validate_opts_string "SCP_OPTS" "${SCP_OPTS}"
   read -r -a SCP_FLAGS <<< "${SCP_OPTS}"
   for flag in "${SCP_FLAGS[@]}"; do
     validate_flag "SCP_OPTS" "${flag}"
   done
 fi
 if [[ -n "${SSH_OPTS:-}" ]]; then
+  validate_opts_string "SSH_OPTS" "${SSH_OPTS}"
   read -r -a SSH_FLAGS <<< "${SSH_OPTS}"
   for flag in "${SSH_FLAGS[@]}"; do
     validate_flag "SSH_OPTS" "${flag}"
