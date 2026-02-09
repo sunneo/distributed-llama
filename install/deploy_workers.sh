@@ -28,25 +28,25 @@ REMOTE_BUNDLE_PATH="${REMOTE_DIR}/${REMOTE_BUNDLE_NAME}"
 
 SCP_FLAGS=()
 SSH_FLAGS=()
-validate_opts() {
+validate_flag() {
   local name="$1"
   local value="$2"
-  if [[ "${value}" =~ [^[:alnum:][:space:]=/._@+-] || "${value}" =~ ProxyCommand ]]; then
-    echo "[deploy_workers] ${name} contains unsupported characters"
+  if [[ ! "${value}" =~ ^[-A-Za-z0-9=/_@.+:]+$ || "${value}" =~ ProxyCommand ]]; then
+    echo "[deploy_workers] ${name} contains unsupported characters: ${value}"
     exit 1
   fi
 }
 validate_path() {
   local name="$1"
   local value="$2"
-  if [[ ! "${value}" =~ ^[A-Za-z0-9._/+-]+$ ]]; then
+  if [[ ! "${value}" =~ ^[A-Za-z0-9._/+\-~ ]+$ ]]; then
     echo "[deploy_workers] ${name} contains invalid characters"
     exit 1
   fi
 }
 validate_node() {
   local value="$1"
-  if [[ ! "${value}" =~ ^([A-Za-z0-9._-]+@)?[A-Za-z0-9._-]+$ ]]; then
+  if [[ ! "${value}" =~ ^([A-Za-z0-9._-]+@)?[A-Za-z0-9._-]+(:[0-9]+)?$ ]]; then
     echo "[deploy_workers] Invalid node entry: ${value}"
     exit 1
   fi
@@ -61,12 +61,16 @@ validate_cmd() {
 }
 
 if [[ -n "${SCP_OPTS:-}" ]]; then
-  validate_opts "SCP_OPTS" "${SCP_OPTS}"
   read -r -a SCP_FLAGS <<< "${SCP_OPTS}"
+  for flag in "${SCP_FLAGS[@]}"; do
+    validate_flag "SCP_OPTS" "${flag}"
+  done
 fi
 if [[ -n "${SSH_OPTS:-}" ]]; then
-  validate_opts "SSH_OPTS" "${SSH_OPTS}"
   read -r -a SSH_FLAGS <<< "${SSH_OPTS}"
+  for flag in "${SSH_FLAGS[@]}"; do
+    validate_flag "SSH_OPTS" "${flag}"
+  done
 fi
 
 if [[ ! -f "${NODES_FILE}" ]]; then

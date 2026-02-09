@@ -21,7 +21,7 @@ fi
 
 validate_host() {
   local value="$1"
-  if [[ ! "${value}" =~ ^[A-Za-z0-9._-]+$ ]]; then
+  if [[ ! "${value}" =~ ^[A-Za-z0-9._:-]+$ ]]; then
     echo "[test_connection] Invalid host entry: ${value}"
     exit 1
   fi
@@ -36,6 +36,13 @@ validate_port() {
 }
 
 validate_port "${PORT}"
+validate_node() {
+  local value="$1"
+  if [[ ! "${value}" =~ ^([A-Za-z0-9._-]+@)?[A-Za-z0-9._:-]+(:[0-9]+)?$ ]]; then
+    echo "[test_connection] Invalid node entry: ${value}"
+    exit 1
+  fi
+}
 
 if [[ ! -f "${NODES_FILE}" ]]; then
   echo "[test_connection] Nodes file not found: ${NODES_FILE}"
@@ -47,6 +54,7 @@ fail=0
 
 while IFS= read -r NODE; do
   [[ -z "${NODE}" || "${NODE}" =~ ^# ]] && continue
+  validate_node "${NODE}"
 
   # Extract host part (strip user@ and optional :sshport)
   HOST_WITH_PORT="${NODE##*@}"
