@@ -31,8 +31,31 @@ SSH_FLAGS=()
 validate_opts() {
   local name="$1"
   local value="$2"
-  if [[ "${value}" =~ [^[:alnum:][:space:]=/._:@+-] ]]; then
+  if [[ "${value}" =~ [^[:alnum:][:space:]=/._@+-] || "${value}" =~ ProxyCommand ]]; then
     echo "[deploy_workers] ${name} contains unsupported characters"
+    exit 1
+  fi
+}
+validate_path() {
+  local name="$1"
+  local value="$2"
+  if [[ ! "${value}" =~ ^[A-Za-z0-9._/+-]+$ ]]; then
+    echo "[deploy_workers] ${name} contains invalid characters"
+    exit 1
+  fi
+}
+validate_node() {
+  local value="$1"
+  if [[ ! "${value}" =~ ^([A-Za-z0-9._-]+@)?[A-Za-z0-9._-]+$ ]]; then
+    echo "[deploy_workers] Invalid node entry: ${value}"
+    exit 1
+  fi
+}
+validate_cmd() {
+  local name="$1"
+  local value="$2"
+  if [[ ! "${value}" =~ ^[A-Za-z0-9._+/-]+$ ]]; then
+    echo "[deploy_workers] ${name} contains invalid characters"
     exit 1
   fi
 }
@@ -56,8 +79,12 @@ if [[ ! -f "${BUNDLE_PATH}" ]]; then
   exit 1
 fi
 
+validate_path "REMOTE_DIR" "${REMOTE_DIR}"
+validate_cmd "PYTHON_BIN" "${PYTHON_BIN}"
+
 while IFS= read -r NODE; do
   [[ -z "${NODE}" || "${NODE}" =~ ^# ]] && continue
+  validate_node "${NODE}"
 
   echo "[deploy_workers] -> ${NODE}"
   ssh "${SSH_FLAGS[@]}" "${NODE}" "mkdir -p '${REMOTE_DIR}'" \
