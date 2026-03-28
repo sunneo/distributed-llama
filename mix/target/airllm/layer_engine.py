@@ -14,6 +14,7 @@ from .model_header import ModelHeader, parse_model_header, print_model_header, H
 from .weight_offsets import WeightOffsetCalculator, LayerWeightOffsets
 from . import tensor_ops
 from .layer_cache import LayerCache
+from .kv_cache import DiskKVCacheManager, KVCacheConfig
 
 
 class MemoryMappedWeights:
@@ -160,7 +161,8 @@ class LayerWiseInferenceEngine:
     Only keeps current layer weights in RAM with LRU caching.
     """
     
-    def __init__(self, model_path: str, cache_size: int = 2, max_memory_gb: float = 4.0):
+    def __init__(self, model_path: str, cache_size: int = 2, max_memory_gb: float = 4.0,
+                 kv_cache_config: Optional[KVCacheConfig] = None):
         """
         Initialize inference engine.
         
@@ -168,6 +170,10 @@ class LayerWiseInferenceEngine:
             model_path: Path to model file
             cache_size: Maximum number of layers to cache
             max_memory_gb: Maximum memory for cache in GB
+            kv_cache_config: Optional KV cache disk offloading configuration.
+                When provided, KV cache is stored on disk/SSD using the
+                configured quantization (default 4-bit) via mmap files.
+                When None, KV cache is kept in RAM (existing behaviour).
         """
         self.model_path = model_path
         self.header: Optional[ModelHeader] = None
@@ -178,6 +184,10 @@ class LayerWiseInferenceEngine:
         
         # Layer cache with LRU eviction
         self.cache = LayerCache(max_layers=cache_size, max_memory_gb=max_memory_gb)
+
+        # Optional disk KV cache manager (None → in-RAM fallback)
+        self.kv_cache_config = kv_cache_config
+        self.kv_cache_manager: Optional[DiskKVCacheManager] = None
     
     def initialize(self) -> None:
         """Initialize the engine by parsing model header."""
@@ -188,7 +198,24 @@ class LayerWiseInferenceEngine:
         # Initialize memory-mapped weight loader
         self.weights_loader = MemoryMappedWeights(self.model_path, self.header)
         self.weights_loader.open()
-        
+
+        # Initialize disk KV cache manager if configured
+        if self.kv_cache_config is not None:
+            self.kv_cache_manager = DiskKVCacheManager(
+                config=self.kv_cache_config,
+                n_layers=self.header.n_layers,
+                n_kv_heads=self.header.n_kv_heads,
+                head_dim=self.header.head_dim,
+            )
+            self.kv_cache_manager.initialize()
+            stats = self.kv_cache_manager.get_stats()
+            print(
+                f"\nDisk KV cache initialised: {self.header.n_layers} layers, "
+                f"Q{self.kv_cache_config.quantize_bits}_0 quantisation, "
+                f"{stats['total_mb_all_layers']:.1f} MB pre-allocated "
+                f"({stats['savings_percent']:.0f}% smaller than F32)"
+            )
+
         print(f"\nInitialized layer-wise engine for {self.header.n_layers} layers")
     
     def load_layer(self, layer_id: int, prefetch_next: bool = True) -> None:
@@ -236,18 +263,30 @@ class LayerWiseInferenceEngine:
             self.cache.prefetch(layer_id + 1)
     
     def execute_layer(self, layer_id: int, x: np.ndarray, pos: int = 0,
-                     kv_cache: Optional[Tuple[np.ndarray, np.ndarray]] = None) -> Tuple[np.ndarray, Optional[Tuple[np.ndarray, np.ndarray]]]:
+                     kv_cache: Optional[Tuple[np.ndarray, np.ndarray]] = None,
+                     kv_cache_manager: Optional[DiskKVCacheManager] = None
+                     ) -> Tuple[np.ndarray, Optional[Tuple[np.ndarray, np.ndarray]]]:
         """
         Execute a single transformer layer.
+        
+        KV cache priority (highest to lowest):
+        1. *kv_cache_manager* – disk/SSD offloading via quantised mmap files.
+        2. *kv_cache* – in-RAM tuple (backward-compatible).
+        3. No cache – every call processes only the current token(s).
         
         Args:
             layer_id: Layer index
             x: Input activations of shape (seq_len, dim)
             pos: Current position in sequence (for RoPE)
-            kv_cache: Optional tuple of (key_cache, value_cache) for autoregressive generation
+            kv_cache: Optional tuple of (key_cache, value_cache) for
+                      in-RAM autoregressive generation (legacy path).
+            kv_cache_manager: Optional disk KV cache manager.  When
+                              provided, *kv_cache* is ignored.
             
         Returns:
-            Tuple of (output_activations, updated_kv_cache)
+            Tuple of (output_activations, updated_kv_cache).
+            ``updated_kv_cache`` is ``None`` when disk offloading is used
+            (the manager handles persistence internally).
         """
         # Load layer weights if not already loaded
         self.load_layer(layer_id)
@@ -272,17 +311,39 @@ class LayerWiseInferenceEngine:
             rope_theta=self.header.rope_theta
         )
         
-        # 4. Update KV cache if provided
-        if kv_cache is not None:
+        # 4. KV cache: disk offloading path (takes priority)
+        if kv_cache_manager is not None:
+            # Load accumulated past K/V from disk (positions [0, pos))
+            past = kv_cache_manager.load(layer_id, pos)
+            if past is not None:
+                k_cache, v_cache = past
+                k_full = np.concatenate([k_cache, k], axis=0)
+                v_full = np.concatenate([v_cache, v], axis=0)
+            else:
+                k_full, v_full = k, v
+
+            # Persist the new K/V vectors for the current position
+            # k shape: (seq_len, kv_dim); save each position
+            seq_len = k.shape[0]
+            for t in range(seq_len):
+                kv_cache_manager.save(layer_id, pos + t, k[t], v[t])
+
+            updated_kv_cache = None  # manager owns the state
+
+        # 4b. In-RAM KV cache (legacy/fallback path)
+        elif kv_cache is not None:
             k_cache, v_cache = kv_cache
-            # Append to cache
-            k = np.concatenate([k_cache, k], axis=0)
-            v = np.concatenate([v_cache, v], axis=0)
-            kv_cache = (k, v)
+            k_full = np.concatenate([k_cache, k], axis=0)
+            v_full = np.concatenate([v_cache, v], axis=0)
+            updated_kv_cache = (k_full, v_full)
+
+        else:
+            k_full, v_full = k, v
+            updated_kv_cache = None
         
         # 5. Multi-head attention
         attn_output = tensor_ops.multi_head_attention(
-            q, k, v,
+            q, k_full, v_full,
             n_heads=self.header.n_heads,
             n_kv_heads=self.header.n_kv_heads
         )
@@ -307,17 +368,22 @@ class LayerWiseInferenceEngine:
         # 10. Residual connection
         x = x + ffn_output
         
-        return x, kv_cache
+        return x, updated_kv_cache
     
     def forward(self, x: np.ndarray, start_pos: int = 0,
                 use_cache: bool = False) -> np.ndarray:
         """
         Run forward pass through all layers.
         
+        When a ``kv_cache_config`` was provided at construction time the disk
+        KV cache manager is used automatically and ``use_cache`` has no
+        additional effect (it is always on).
+        
         Args:
             x: Input tokens/embeddings of shape (seq_len, dim)
             start_pos: Starting position for RoPE
-            use_cache: Whether to use KV caching for autoregressive generation
+            use_cache: Whether to use in-RAM KV caching (ignored when disk
+                       KV cache is active)
             
         Returns:
             Output activations of shape (seq_len, dim)
@@ -325,7 +391,16 @@ class LayerWiseInferenceEngine:
         if self.header is None:
             raise RuntimeError("Engine not initialized")
         
-        # Initialize KV cache if using cache
+        # Disk KV cache path
+        if self.kv_cache_manager is not None:
+            for layer_id in range(self.header.n_layers):
+                x, _ = self.execute_layer(
+                    layer_id, x, start_pos,
+                    kv_cache_manager=self.kv_cache_manager
+                )
+            return x
+
+        # In-RAM KV cache path (legacy / no disk offloading)
         kv_caches = [None] * self.header.n_layers
         
         for layer_id in range(self.header.n_layers):
@@ -339,3 +414,5 @@ class LayerWiseInferenceEngine:
         if self.weights_loader:
             self.weights_loader.close()
         self.cache.clear()
+        if self.kv_cache_manager is not None:
+            self.kv_cache_manager.close()

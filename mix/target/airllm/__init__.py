@@ -5,6 +5,7 @@ Enables running large models (30B+) on consumer hardware by:
 1. Loading only 1-2 layers into RAM at a time
 2. Swapping layers from disk as needed
 3. Using memory-mapped I/O for zero-copy access
+4. Offloading KV cache to disk/SSD with 4-bit quantisation
 """
 
 __version__ = "0.1.0"
@@ -27,10 +28,11 @@ from .weight_offsets import (
     LayerWeightOffsets
 )
 from .layer_cache import LayerCache
+from .kv_cache import KVCacheConfig, DiskKVCacheManager
 from . import tensor_ops
 
 __all__ = [
-    'MemoryMappedWeights', 
+    'MemoryMappedWeights',
     'LayerWiseInferenceEngine',
     'ModelHeader',
     'parse_model_header',
@@ -42,5 +44,7 @@ __all__ = [
     'WeightOffsetCalculator',
     'LayerWeightOffsets',
     'LayerCache',
+    'KVCacheConfig',
+    'DiskKVCacheManager',
     'tensor_ops'
 ]
