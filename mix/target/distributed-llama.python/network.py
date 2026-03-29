@@ -137,6 +137,18 @@ class NetworkClient:
         if ack != ACK:
             raise TransferException(f"Invalid ACK packet: expected {ACK}, got {ack}")
     
+    # ── convenience aliases ───────────────────────────────────────────────────
+
+    def send_bytes(self, data: bytes) -> None:
+        """Alias for :meth:`write` – send raw bytes to the root node."""
+        self.write(data)
+
+    def receive_bytes(self, size: int) -> bytes:
+        """Alias for :meth:`read` – receive *size* bytes from the root node."""
+        return self.read(size)
+
+    # ── statistics ────────────────────────────────────────────────────────────
+
     def get_stats(self) -> Tuple[int, int]:
         """
         Get network statistics.
