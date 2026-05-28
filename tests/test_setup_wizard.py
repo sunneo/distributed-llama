@@ -83,8 +83,8 @@ class SetupWizardCommandTests(unittest.TestCase):
                 "remote_deploy_dir": "/srv/dllama",
             }
         )
-        self.assertIn("cd /srv/dllama/mix/target/distributed-llama.python", command)
-        self.assertIn("python3 -m worker --host 10.0.0.1 --port 9999", command)
+        self.assertIn("cd /srv/dllama/mix/target &&", command)
+        self.assertIn("python3 -m distributed_llama_python.worker --host 10.0.0.1 --port 9999", command)
         self.assertIn("--model /srv/models/root.m", command)
 
     def test_build_mix_api_command_uses_workers_from_slave_nodes(self):

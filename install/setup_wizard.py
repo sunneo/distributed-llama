@@ -181,12 +181,12 @@ def build_mix_worker_command(config: Dict[str, object]) -> str:
 
     command = [
         "cd",
-        shlex.quote(f"{remote_deploy_dir}/mix/target/distributed-llama.python"),
+        shlex.quote(f"{remote_deploy_dir}/mix/target"),
         "&&",
         "nohup",
         shlex.quote(remote_python),
         "-m",
-        "worker",
+        "distributed_llama_python.worker",
         "--host",
         shlex.quote(master_host),
         "--port",
