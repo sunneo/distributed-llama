@@ -3,6 +3,7 @@ import argparse
 import html
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -10,6 +11,7 @@ from http.server import SimpleHTTPRequestHandler
 from pathlib import Path
 from socketserver import TCPServer
 from typing import Dict, List
+from urllib.parse import urlsplit
 
 WIZARD_STEPS: List[Dict[str, object]] = [
     {
@@ -20,7 +22,8 @@ WIZARD_STEPS: List[Dict[str, object]] = [
         "fields": [
             ("master_host", "Master host", "127.0.0.1"),
             ("worker_port", "Worker port", "9999"),
-            ("slave_nodes", "Slave nodes (comma separated host:port)", ""),
+            ("slave_nodes", "Slave nodes (comma separated ssh_target[:worker_port])", ""),
+            ("remote_deploy_dir", "Remote deploy dir", "/opt/distributed-llama"),
         ],
     },
     {
@@ -32,6 +35,7 @@ WIZARD_STEPS: List[Dict[str, object]] = [
             ("model_name", "Model preset (for launch.py)", "llama3_1_8b_instruct_q40"),
             ("model_path", "Model path", "models/llama3_1_8b_instruct_q40/dllama_model_llama3_1_8b_instruct_q40.m"),
             ("tokenizer_path", "Tokenizer path", "models/llama3_1_8b_instruct_q40/dllama_tokenizer_llama3_1_8b_instruct_q40.t"),
+            ("remote_model_path", "Remote model path (optional)", ""),
         ],
     },
     {
@@ -136,6 +140,136 @@ def build_litellm_command(config: Dict[str, object]) -> str:
         f"litellm --model {model_name} --api_base {dllama_api_base} "
         f"--port {litellm_port} --api_key {api_key}"
     )
+
+
+def parse_slave_nodes(config: Dict[str, object]) -> List[Dict[str, str]]:
+    default_worker_port = str(config.get("worker_port", "9999"))
+    raw_nodes = str(config.get("slave_nodes", ""))
+    parsed: List[Dict[str, str]] = []
+    for raw_node in raw_nodes.split(","):
+        node = raw_node.strip()
+        if not node:
+            continue
+
+        ssh_target = node
+        runtime_host = node.split("@", 1)[-1]
+        runtime_port = default_worker_port
+
+        if ":" in node:
+            maybe_target, maybe_port = node.rsplit(":", 1)
+            if maybe_port.isdigit():
+                ssh_target = maybe_target
+                runtime_host = maybe_target.split("@", 1)[-1]
+                runtime_port = maybe_port
+
+        parsed.append(
+            {
+                "ssh_target": ssh_target,
+                "worker_address": f"{runtime_host}:{runtime_port}",
+            }
+        )
+    return parsed
+
+
+def build_mix_worker_command(config: Dict[str, object]) -> str:
+    remote_deploy_dir = str(config.get("remote_deploy_dir", "/opt/distributed-llama"))
+    remote_python = str(config.get("remote_python", "python3"))
+    master_host = str(config.get("master_host", "127.0.0.1"))
+    worker_port = str(config.get("worker_port", "9999"))
+    remote_model_path = str(config.get("remote_model_path") or config.get("model_path", ""))
+    remote_log_path = str(config.get("remote_worker_log", "/tmp/distributed-llama-worker.log"))
+
+    command = [
+        "cd",
+        shlex.quote(f"{remote_deploy_dir}/mix/target/distributed-llama.python"),
+        "&&",
+        "nohup",
+        shlex.quote(remote_python),
+        "-m",
+        "worker",
+        "--host",
+        shlex.quote(master_host),
+        "--port",
+        shlex.quote(worker_port),
+    ]
+    if remote_model_path:
+        command.extend(["--model", shlex.quote(remote_model_path)])
+    command.extend([">", shlex.quote(remote_log_path), "2>&1", "<", "/dev/null", "&"])
+    return " ".join(command)
+
+
+def build_mix_api_command(config: Dict[str, object], repo_root: Path) -> List[str]:
+    api_base = str(config.get("dllama_api_base", "http://127.0.0.1:9990/v1"))
+    parsed_api_base = urlsplit(api_base)
+    api_host = parsed_api_base.hostname or str(config.get("master_host", "127.0.0.1"))
+    api_port = str(parsed_api_base.port or 9990)
+
+    command = [
+        str(repo_root / "dllama-api"),
+        "--host",
+        api_host,
+        "--port",
+        api_port,
+        "--model",
+        str(config.get("model_path", "")),
+        "--tokenizer",
+        str(config.get("tokenizer_path", "")),
+    ]
+
+    workers = [node["worker_address"] for node in parse_slave_nodes(config)]
+    if workers:
+        command.extend(["--workers", *workers])
+    return command
+
+
+def write_nodes_file(settings_path: Path, config: Dict[str, object]) -> Path:
+    nodes_path = settings_path.with_name("wizard-nodes.txt")
+    ssh_targets = [node["ssh_target"] for node in parse_slave_nodes(config)]
+    nodes_path.write_text("\n".join(ssh_targets) + "\n", encoding="utf-8")
+    return nodes_path
+
+
+def deploy_and_start_workers(state: WizardState, repo_root: Path) -> bool:
+    nodes = parse_slave_nodes(state.settings["config"])
+    if not nodes:
+        print("⚠️ No slave nodes configured. Fill in 'slave_nodes' first.")
+        return False
+
+    config = state.settings["config"]
+    nodes_path = write_nodes_file(state.settings_path, config)
+    remote_dir = str(config.get("remote_deploy_dir", "/opt/distributed-llama"))
+
+    package_result = subprocess.run(["bash", str(repo_root / "install/package_worker.sh")], cwd=repo_root, check=False)
+    if package_result.returncode != 0:
+        print("❌ Failed to package mixed worker bundle.")
+        return False
+
+    deploy_result = subprocess.run(
+        ["bash", str(repo_root / "install/deploy_workers.sh"), str(nodes_path), remote_dir],
+        cwd=repo_root,
+        check=False,
+    )
+    if deploy_result.returncode != 0:
+        print("❌ Failed to deploy mixed worker bundle.")
+        return False
+
+    remote_command = build_mix_worker_command(config)
+    for node in nodes:
+        print(f"▶ Starting mixed worker on {node['ssh_target']}")
+        start_result = subprocess.run(["ssh", node["ssh_target"], remote_command], check=False)
+        if start_result.returncode != 0:
+            print(f"❌ Failed to start mixed worker on {node['ssh_target']}")
+            return False
+
+    print(f"✅ Deployed and started mixed workers using {nodes_path}")
+    return True
+
+
+def run_mix_api(state: WizardState, repo_root: Path) -> None:
+    binary_path = repo_root / "dllama-api"
+    if not binary_path.exists():
+        subprocess.run(["make", "dllama-api"], cwd=repo_root, check=False)
+    subprocess.run(build_mix_api_command(state.settings["config"], repo_root), cwd=repo_root, check=False)
 
 
 def render_chat_ui_html(config: Dict[str, object]) -> str:
@@ -283,7 +417,7 @@ def run_step_editor(state: WizardState) -> None:
     for key, label, default in step["fields"]:
         print(f"- {label}: {state.config_value(key, default)}")
 
-    print("\nCommands: edit | next | prev | goto <n> | save | run-download | run-litellm | run-chat-ui | quit")
+    print("\nCommands: edit | next | prev | goto <n> | save | run-download | run-deploy | run-mix | run-litellm | run-chat-ui | quit")
 
 
 def handle_command(command: str, state: WizardState, repo_root: Path) -> bool:
@@ -312,6 +446,10 @@ def handle_command(command: str, state: WizardState, repo_root: Path) -> bool:
     elif action == "run-download":
         model_name = str(state.settings["config"].get("model_name", "llama3_1_8b_instruct_q40"))
         subprocess.run([sys.executable, str(repo_root / "launch.py"), model_name], check=False)
+    elif action == "run-deploy":
+        deploy_and_start_workers(state, repo_root)
+    elif action == "run-mix":
+        run_mix_api(state, repo_root)
     elif action == "run-litellm":
         try_start_litellm(state.settings["config"])
     elif action == "run-chat-ui":
@@ -397,9 +535,23 @@ def run_gui(state: WizardState) -> None:
         save_current_fields()
         status_var.set(f"Saved at step {state.current_step_index + 1}")
 
+    def on_deploy():
+        save_current_fields()
+        if deploy_and_start_workers(state, Path(__file__).resolve().parents[1]):
+            status_var.set("Deployed mixed workers")
+        else:
+            status_var.set("Worker deployment failed")
+
+    def on_run_mix():
+        save_current_fields()
+        run_mix_api(state, Path(__file__).resolve().parents[1])
+        status_var.set("Started mixed API")
+
     tk.Button(button_frame, text="Previous", command=on_prev).pack(side=tk.LEFT)
     tk.Button(button_frame, text="Next", command=on_next).pack(side=tk.LEFT, padx=8)
     tk.Button(button_frame, text="Save", command=on_save).pack(side=tk.LEFT)
+    tk.Button(button_frame, text="Deploy Workers", command=on_deploy).pack(side=tk.LEFT, padx=8)
+    tk.Button(button_frame, text="Start Mix API", command=on_run_mix).pack(side=tk.LEFT)
     tk.Label(frame, textvariable=status_var, fg="#555").pack(anchor="w", pady=(8, 0))
 
     render()
