@@ -140,7 +140,6 @@ def build_litellm_command(config: Dict[str, object]) -> str:
 
 def render_chat_ui_html(config: Dict[str, object]) -> str:
     api_base = html.escape(str(config.get("dllama_api_base", "http://127.0.0.1:9990/v1")), quote=True)
-    api_key = html.escape(str(config.get("api_key", "dllama-local-key")), quote=True)
     return f"""<!doctype html>
 <html>
 <head>
@@ -165,7 +164,7 @@ def render_chat_ui_html(config: Dict[str, object]) -> str:
     <div id=\"conversation-list\"></div>
     <hr/>
     <label>API Base</label><input id=\"api-base\" value=\"{api_base}\" />
-    <label>API Key</label><input id=\"api-key\" value=\"{api_key}\" />
+    <label>API Key</label><input id=\"api-key\" value=\"\" placeholder=\"Enter API key\" />
   </div>
   <div id=\"main\">
     <div id=\"messages\"></div>
@@ -268,7 +267,7 @@ def try_start_litellm(config: Dict[str, object]) -> bool:
         print("⚠️ litellm command not found. Install with: pip install litellm")
         return False
     command = build_litellm_command(config)
-    print(f"▶ Starting LiteLLM: {command}")
+    print("▶ Starting LiteLLM bridge process")
     subprocess.Popen(command.split(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return True
 
