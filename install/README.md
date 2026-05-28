@@ -33,7 +33,7 @@ python install/setup_wizard.py --mode gui
 - Step-by-step deployment guidance (master/slave, model, endpoint, chat UI).
 - Diagram + explanation on each page.
 - Persistent `settings.json` (resume, next/previous/goto support).
-- Commands to trigger model download, generate/start a chat UI, and guide LiteLLM startup.
+- Commands to trigger model download, package/deploy/start remote mixed workers, start the local mixed `dllama-api`, generate/start a chat UI, and guide LiteLLM startup.
 
 ## What's New
 
