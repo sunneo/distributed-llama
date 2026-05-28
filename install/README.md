@@ -5,6 +5,10 @@ Scripts in this folder provision a minimal **Distributed-Llama + AirLLM** enviro
 ## Quick start
 
 ```bash
+# 0) Optional: run interactive setup wizard (TUI or GUI)
+python install/setup_wizard.py --mode tui
+python install/setup_wizard.py --mode gui
+
 # 1) Build C++ root binary and install Python package with optimized C++ extensions
 ./install/setup_root.sh
 
@@ -20,6 +24,16 @@ Scripts in this folder provision a minimal **Distributed-Llama + AirLLM** enviro
 # 5) Run a synthetic benchmark to confirm the Python worker stack is ready
 ./install/run_benchmark.sh
 ```
+
+## Setup wizard
+
+`install/setup_wizard.py` provides a resumable deployment wizard with:
+
+- **TUI + GUI** modes.
+- Step-by-step deployment guidance (master/slave, model, endpoint, chat UI).
+- Diagram + explanation on each page.
+- Persistent `settings.json` (resume, next/previous/goto support).
+- Commands to trigger model download, generate/start a chat UI, and guide LiteLLM startup.
 
 ## What's New
 
