@@ -203,6 +203,12 @@ def build_mix_api_command(config: Dict[str, object], repo_root: Path) -> List[st
     parsed_api_base = urlsplit(api_base)
     api_host = parsed_api_base.hostname or str(config.get("master_host", "127.0.0.1"))
     api_port = str(parsed_api_base.port or 9990)
+    model_path = Path(str(config.get("model_path", "")))
+    tokenizer_path = Path(str(config.get("tokenizer_path", "")))
+    if not model_path.is_absolute():
+        model_path = repo_root / model_path
+    if not tokenizer_path.is_absolute():
+        tokenizer_path = repo_root / tokenizer_path
 
     command = [
         str(repo_root / "dllama-api"),
@@ -211,9 +217,9 @@ def build_mix_api_command(config: Dict[str, object], repo_root: Path) -> List[st
         "--port",
         api_port,
         "--model",
-        str(config.get("model_path", "")),
+        str(model_path),
         "--tokenizer",
-        str(config.get("tokenizer_path", "")),
+        str(tokenizer_path),
     ]
 
     workers = [node["worker_address"] for node in parse_slave_nodes(config)]
@@ -265,11 +271,37 @@ def deploy_and_start_workers(state: WizardState, repo_root: Path) -> bool:
     return True
 
 
-def run_mix_api(state: WizardState, repo_root: Path) -> None:
+def run_mix_api(state: WizardState, repo_root: Path) -> bool:
+    config = state.settings["config"]
+    model_path = Path(str(config.get("model_path", "")))
+    tokenizer_path = Path(str(config.get("tokenizer_path", "")))
+    if not model_path.is_absolute():
+        model_path = repo_root / model_path
+    if not tokenizer_path.is_absolute():
+        tokenizer_path = repo_root / tokenizer_path
+
+    if not config.get("model_path") or not model_path.exists():
+        print(f"⚠️ Model file not found: {model_path}")
+        print("   Use 'run-download' or edit 'model_path' before running mix.")
+        return False
+
+    if not config.get("tokenizer_path") or not tokenizer_path.exists():
+        print(f"⚠️ Tokenizer file not found: {tokenizer_path}")
+        print("   Use 'run-download' or edit 'tokenizer_path' before running mix.")
+        return False
+
     binary_path = repo_root / "dllama-api"
     if not binary_path.exists():
-        subprocess.run(["make", "dllama-api"], cwd=repo_root, check=False)
-    subprocess.run(build_mix_api_command(state.settings["config"], repo_root), cwd=repo_root, check=False)
+        build_result = subprocess.run(["make", "dllama-api"], cwd=repo_root, check=False)
+        if build_result.returncode != 0 or not binary_path.exists():
+            print("❌ Failed to build dllama-api.")
+            return False
+
+    run_result = subprocess.run(build_mix_api_command(config, repo_root), cwd=repo_root, check=False)
+    if run_result.returncode != 0:
+        print("❌ Mix API exited with a non-zero status.")
+        return False
+    return True
 
 
 def render_chat_ui_html(config: Dict[str, object]) -> str:
@@ -544,8 +576,10 @@ def run_gui(state: WizardState) -> None:
 
     def on_run_mix():
         save_current_fields()
-        run_mix_api(state, Path(__file__).resolve().parents[1])
-        status_var.set("Started mixed API")
+        if run_mix_api(state, Path(__file__).resolve().parents[1]):
+            status_var.set("Mix API exited successfully")
+        else:
+            status_var.set("Mix API failed")
 
     tk.Button(button_frame, text="Previous", command=on_prev).pack(side=tk.LEFT)
     tk.Button(button_frame, text="Next", command=on_next).pack(side=tk.LEFT, padx=8)
