@@ -8,7 +8,9 @@ validate_node() {
   fi
   local host_port="${value##*@}"
   local host="${host_port%%:*}"
-  if [[ ! "${host}" =~ ^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*$ ]]; then
+  echo "[common] host=${host}, host_port=${host_port}"
+  # 替換成下面這段：只要 host 包含標準的字母、數字、減號、點號就放行
+  if [[ ! "${host}" =~ ^[A-Za-z0-9.-]+$ ]]; then
     echo "[common] Invalid hostname in node entry: ${value}"
     exit 1
   fi
